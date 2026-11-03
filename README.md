@@ -41,7 +41,7 @@ Rules:
 |-----|----------------------------------------------------|-------------------------------|-------------|-----------|
 | M0  | Project scaffolding & environment                  | Reproducibility design        | ✅ Done | 2026-11-04 |
 | M1  | Data ingestion, cleaning & label harmonization     | Dataset preparation 1–4       | ✅ Done | 2026-11-04 |
-| M2  | Synthetic drift timeline, clients & D_pub          | Time windows, client sim, D_pub | ⬜ Not started | — |
+| M2  | Synthetic drift timeline, clients & D_pub          | Time windows, client sim, D_pub | ✅ Done | 2026-11-04 |
 | M3  | Edge ensemble + centralized/static baselines       | Edge model, E1, static baseline | ⬜ Not started | — |
 | M4  | Evaluation harness & metrics                       | Evaluation metrics            | ⬜ Not started | — |
 | M5  | Drift detection & uncertainty gate                 | ADWIN, PSI/KL/W, gate τc/τd   | ⬜ Not started | — |
@@ -248,7 +248,7 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 
 ### M2: Synthetic drift timeline, non-IID clients & D_pub
 **Goal:** the experimental world (windows × clients) written as JSON so it can be reproduced.
-- [ ] Window definition (headline, D4):
+- [x] Window definition (headline, D4). Each class is introduced at its window, then recurs with fresh, disjoint rows in every later window (cumulative stream):
   | Window | Train labels introduced | Notes |
   |---|---|---|
   | t0 | Benign + DoS | baseline deployment |
@@ -257,13 +257,24 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
   | t3 | + MQTT | protocol-semantic drift |
   | t4 | + Spoofing (ARP) + BLE DoS | BLE from Zenodo; separate BLE feature space and model (see External data) |
   | t5 | all + Recon OS-Scan/VulScan (variant drift) + client mix shift | compound drift |
-- [ ] Device proxy: cluster flows into protocol/behaviour profiles (protocol indicators + `Protocol_Type`) to stand in for devices
-- [ ] 15 clients (sensitivity: 10, 20): profile-based non-IID plus Dirichlet(α) label skew; population drift by reassigning profiles at t5
-- [ ] D_pub: a fixed stratified subset (D2), disjoint from all client and test data
-- [ ] Per-window held-out test sets (cumulative, to measure forgetting)
-- [ ] Alternate timeline(s) for sensitivity analysis
+- [x] Device identity: instead of a clustering proxy, the **real Zenodo device captures** are used. Each of 21 device/network groups (e.g. `Owltron_Camera|WAN`) belongs to exactly one client; the network-wide captures (Active/ActiveBroker/Idle) are spread over all clients
+- [x] 15 clients (n_clients is configurable for the 10/20 sensitivity runs): Dirichlet(α=0.5) label skew per class, quantity skew emerges naturally; **population drift at t5**: 5 clients get re-drawn attack mixes and 5 held-back device groups are onboarded
+- [x] D_pub: fixed stratified subset (D2) of 17,913 rows, removed from all client/test data, tagged with `intro_window` so that M7 sees only classes introduced so far (`window_mode: cumulative`)
+- [x] Per-window, client-local held-out test sets (20% per window×class). Exact duplicates are dropped first, so train and test never share a row (your M2 decision)
+- [x] Alternate timeline `alt_order` (different family order, t5 = population drift only)
+- [x] BLE sub-federation: 3 clients joining at t4, official BLE train/test split, Dirichlet label skew
+- [x] Loader `ids.partition.io.load_rows(cfg, pool, timeline, windows, split, clients)` plus `load_dpub`, `load_ble_rows`
 - **Deliverables:** `window_definition.json`, `client_partitions.json`, `dpub.parquet`, partition statistics plots.
 - **Acceptance:** fully deterministic from the seed; the statistics show measurable non-IID skew (e.g. Jensen–Shannon divergence between client label distributions).
+
+**Results (2026-11-04)**
+- Run: `python scripts/m2_build_partitions.py` (~45 s for dev + full × 2 timelines). Reports: [`reports/m2/full/PARTITION.md`](reports/m2/full/PARTITION.md) (headline) and [`reports/m2/dev/PARTITION.md`](reports/m2/dev/PARTITION.md).
+- Full pool, headline: **9,110,630 assigned rows**, which reconciles exactly (8,775,013 CSV − 7,379 dups − 17,913 D_pub + 361,081 profiling − 172 profiling dups). Per window: t0 372k train / 93k test, t1–t5 1.31–1.45M train / 327–362k test.
+- Dev pool: 624,927 rows, D_pub 13,027, BLE 78,380, for fast local work.
+- Non-IID: mean client JSD vs window 0.17 (t0) → 0.20 (t5), range 0.07–0.33. Client size at t5 ranges 46k–226k.
+- **Deterministic:** rebuilding gives a byte-identical `assignments.parquet`. Loader cross-check: loaded features match the processed Parquet exactly.
+- Observation: because DDoS dominates the volume, newly introduced families are a **small slice** of their window (ARP-Spoofing ≈ 0.5% of t4 train, Recon-OS/VulScan < 1% of t5). This is realistic, and macro-F1 exposes it, but the later drift steps are subtle in accuracy terms. A per-window volume cap is an easy knob if M3/M4 show the drift signal is too weak.
+- Tests: 20 passing (`tests/test_partition.py`: timeline validation, allocation primitives, D_pub caps, row-disjointness, no class before its intro window, device single-ownership, onboarding window, determinism, BLE split).
 
 ### M3: Edge ensemble + centralized & static baselines
 **Goal:** a strong edge detector and the upper and lower bounds.
@@ -376,3 +387,4 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 | 2026-11-04 | — | BLE data found: downloaded the Zenodo CICIoMT2024 derivative (CC BY 4.0; Bluetooth 1.55M packet rows; Wi-Fi parquet with device `source_file` + official split). t4 can now include BLE DoS. |
 | 2026-11-04 | M0 ✅ | Scaffolding done: package `ids`, layered configs (local/kaggle), seeding, JSONL logging, run snapshots, Kaggle bootstrap notebook; 6 tests pass. Compute plan set to hybrid local + Kaggle. Repo pushed to GitHub. |
 | 2026-11-04 | M1 ✅ | Data prep done: 8.78M rows → 249 MB Parquet (lossless, fixed label codes), dev sample 568k, BLE relabelled, 42 device-profiling captures extracted. EDA found the IAT/timestamp shortcut features → new decision D6 (exclude IAT by default). Only `Drate` is constant; 7,379 duplicates with no label conflicts. 13 tests pass. |
+| 2026-11-04 | M2 ✅ | Partitions built (dev + full, headline + alt timeline): 15 Dirichlet non-IID clients with real device ownership, population drift at t5, D_pub 17.9k, BLE 3-client sub-federation from t4. Duplicates dropped before splitting. Deterministic (byte-identical rebuild). 20 tests pass. |
