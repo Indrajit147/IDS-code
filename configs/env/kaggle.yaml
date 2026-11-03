@@ -3,7 +3,7 @@
 # private dataset slug does not need to be hard-coded.
 paths:
   data_root: /kaggle/input
-  processed: /kaggle/working/processed
+  processed: processed             # uploaded M1 output; located via data_manifest.json
   splits: /kaggle/working/splits
   results_root: /kaggle/working/results/runs
 resources:
