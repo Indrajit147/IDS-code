@@ -16,7 +16,17 @@ LABELS = ["y_attack19", "y_category", "y_binary"]
 
 
 def processed_dir(cfg: dict) -> Path:
-    return data_path(cfg, "processed")
+    """Folder holding data_manifest.json + parquet files.
+
+    On Kaggle the uploaded dataset may nest it anywhere under /kaggle/input, so if
+    the configured folder lacks the manifest we look for the manifest itself.
+    """
+    p = data_path(cfg, "processed")
+    if (p / "data_manifest.json").exists() or cfg.get("env") != "kaggle":
+        return p
+    root = Path(cfg["paths"]["data_root"])
+    hits = sorted(root.rglob("data_manifest.json")) if root.exists() else []
+    return hits[0].parent if hits else p
 
 
 def load_manifest(cfg: dict) -> dict:

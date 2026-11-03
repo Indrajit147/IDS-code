@@ -42,7 +42,7 @@ Rules:
 | M0  | Project scaffolding & environment                  | Reproducibility design        | ✅ Done | 2026-11-04 |
 | M1  | Data ingestion, cleaning & label harmonization     | Dataset preparation 1–4       | ✅ Done | 2026-11-04 |
 | M2  | Synthetic drift timeline, clients & D_pub          | Time windows, client sim, D_pub | ✅ Done | 2026-11-04 |
-| M3  | Edge ensemble + centralized/static baselines       | Edge model, E1, static baseline | ⬜ Not started | — |
+| M3  | Edge ensemble + centralized/static baselines       | Edge model, E1, static baseline | ✅ Done (dev) · full-pool run pending on Kaggle | 2026-11-04 |
 | M4  | Evaluation harness & metrics                       | Evaluation metrics            | ⬜ Not started | — |
 | M5  | Drift detection & uncertainty gate                 | ADWIN, PSI/KL/W, gate τc/τd   | ⬜ Not started | — |
 | M6  | Incremental local learning + rehearsal buffer      | DA-FedDistill step 1          | ⬜ Not started | — |
@@ -164,7 +164,7 @@ The proposal ends with five open questions. Development proceeds with the defaul
 | D3 | LLM override | **Conservative override**: allowed only when there is high disagreement *and* a drift flag; always logged | Matches the proposal's risk mitigation |
 | D4 | Headline drift regime | **Attack-category introduction** (t0→t5); variant and population drift as secondary | Clear and class-incremental |
 | D5 | Privacy section | **Short analysis** of what is shared (soft labels on D_pub, drift stats, escalated evidence) | Low cost, expected by TNSM reviewers |
-| D6 | Shortcut features (added in M1) | **Exclude `IAT` (Wi-Fi) and `cumulative_packet_count` (BLE) from modelling**; BLE `timestamp` is never a feature. A with-IAT run is reported as sensitivity in M14 | `IAT` alone reaches 0.83 macro-F1, so it likely encodes capture time; excluding it gives conservative, reviewer-proof results. Toggle: `features.exclude_wifi` |
+| D6 | Shortcut features (added in M1) | **Exclude `IAT` (Wi-Fi) and `cumulative_packet_count` (BLE) from modelling**; BLE `timestamp` is never a feature. A with-IAT run is reported as sensitivity in M14 | `IAT` alone reaches 0.83 macro-F1, and its values (mean 8.5×10⁷, max 1.7×10⁸) look like timestamps rather than inter-arrival times. **M3 A/B (t1, dev):** adding IAT lifts macro-F1 from 0.820 to 0.9997 and DoS F1 from 0.615 to 0.999, so DoS vs DDoS becomes trivially separable. That is the signature of a capture-session shortcut, and it likely explains the near-perfect scores reported on this dataset. Toggle: `features.exclude_wifi` |
 
 ---
 
@@ -278,12 +278,31 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 
 ### M3: Edge ensemble + centralized & static baselines
 **Goal:** a strong edge detector and the upper and lower bounds.
-- [ ] XGBoost and LightGBM with class weights; edge-friendly limits (depth, number of trees)
-- [ ] Fusion: probability averaging and validation-weighted averaging; temperature or isotonic calibration
-- [ ] **E1 centralized** (retrained per window on all data) = upper bound
-- [ ] **Static** (trained on t0 only) = drift-degradation lower bound
-- [ ] Edge latency (ms/sample, P50/P95) and model size
+- [x] XGBoost and LightGBM with balanced class weights (capped at 50); edge-friendly limits (depth 8 / 63 leaves, ≤300 trees, early stopping 20)
+- [x] Fixed global label space: models train on the locally present classes, and their outputs are scattered into all 6 columns (absent classes get exactly 0), so windows and clients with missing classes stay compatible
+- [x] Fusion: weighted averaging with the weight chosen by validation log-loss (w ∈ {0, 0.1, …, 1}); temperature calibration on validation NLL
+- [x] **E1 centralized** (retrained per window on all clients' data for windows 0..t) = upper bound
+- [x] **Static** (trained on t0 only) = drift-degradation lower bound. It is row t0 of the train × eval matrix
+- [x] Edge latency (single-flow P50/P95, batched µs/flow) and model size
+- [x] BLE edge model (binary, separate 5-feature space) for the BLE sub-federation
+- [x] Kaggle notebook for the full pool: `notebooks/m3_kaggle.ipynb`
 - **Acceptance:** E1 and static results for every window are logged; calibration error (ECE) is reported before and after calibration.
+
+**Results, dev pool (2026-11-04)**: [`reports/m3/dev/RESULTS.md`](reports/m3/dev/RESULTS.md)
+- Run: `python scripts/m3_baselines.py --pool dev` (~2.5 min locally, deterministic: a re-run reproduces every number).
+
+  | window | t0 | t1 | t2 | t3 | t4 | t5 | window avg |
+  |---|---:|---:|---:|---:|---:|---:|---:|
+  | E1 centralized macro-F1 | 1.000 | 0.820 | 0.862 | 0.888 | 0.890 | 0.883 | **0.891** |
+  | Static (t0 only) macro-F1 | 1.000 | 0.461 | 0.325 | 0.231 | 0.162 | 0.160 | **0.390** |
+
+- **Drift effect confirmed.** Without updates the model degrades by 0.72 macro-F1 by t5, so the timeline gives a strong signal for M6–M9.
+- **The main error is DoS↔DDoS confusion** (20–25% each way; DoS F1 ≈ 0.62, DDoS ≈ 0.85), which the proposal anticipated. All other categories reach F1 ≥ 0.89 (benign 0.98, recon 0.96, MQTT 0.99, spoofing 0.89–0.93). See the IAT A/B under D6.
+- Components (diagonal mean): XGB 0.8901, LGBM 0.8897, fused 0.8905, calibrated 0.8905 macro-F1. **Calibration lowers ECE from 0.0187 to 0.0140.** The fusion weight varies by window (w_xgb 0.0–0.7).
+- Edge cost: t0 model 0.9 MB with batched inference at 3 µs/flow. The t5 model is **26 MB** (XGB 19 MB + LGBM 7 MB) at 22 µs/flow batched, with ~9.5 ms single-flow latency (dominated by Python call overhead). The size is high for a constrained gateway, so tree-count and depth limits get revisited in M9 (feature selection) and M14.
+- BLE: macro-F1 0.992–0.995, AUROC ≥ 0.999. BLE DoS is nearly trivially separable from packet-level fields.
+- **Pending:** the full-pool run on Kaggle (`notebooks/m3_kaggle.ipynb`). Its numbers will be added here as "Results, full pool".
+- Tests: 25 passing (`tests/test_edge.py`: global label space with absent classes, binary mode, persistence, temperature/ECE, balanced weights, present-class macro metrics).
 
 ### M4: Evaluation harness & metrics
 **Goal:** one evaluator that every experiment reuses.
@@ -388,3 +407,4 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 | 2026-11-04 | M0 ✅ | Scaffolding done: package `ids`, layered configs (local/kaggle), seeding, JSONL logging, run snapshots, Kaggle bootstrap notebook; 6 tests pass. Compute plan set to hybrid local + Kaggle. Repo pushed to GitHub. |
 | 2026-11-04 | M1 ✅ | Data prep done: 8.78M rows → 249 MB Parquet (lossless, fixed label codes), dev sample 568k, BLE relabelled, 42 device-profiling captures extracted. EDA found the IAT/timestamp shortcut features → new decision D6 (exclude IAT by default). Only `Drate` is constant; 7,379 duplicates with no label conflicts. 13 tests pass. |
 | 2026-11-04 | M2 ✅ | Partitions built (dev + full, headline + alt timeline): 15 Dirichlet non-IID clients with real device ownership, population drift at t5, D_pub 17.9k, BLE 3-client sub-federation from t4. Duplicates dropped before splitting. Deterministic (byte-identical rebuild). 20 tests pass. |
+| 2026-11-04 | M3 ✅ (dev) | Edge ensemble (XGB+LGBM, fixed 6-class space, val-tuned fusion + temperature). Dev pool: E1 window-avg macro-F1 0.891 vs static 0.390 (static falls to 0.16 by t5). Main error: DoS↔DDoS. IAT A/B shows IAT makes DoS/DDoS trivially separable (0.82→0.9997), which supports D6. BLE 0.99. Kaggle notebook for the full pool added. 25 tests pass. |

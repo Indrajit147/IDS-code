@@ -75,6 +75,27 @@ ble:                               # separate sub-federation (different feature 
   start_window: t4
   dev_frac: 0.05                   # BLE subsample for the dev pool
 
+models:                            # M3 edge ensemble (edge-friendly limits)
+  val_frac: 0.10                   # held out from training for early stopping / fusion / temperature
+  weight_cap: 50.0                 # cap on balanced class weights
+  early_stopping: 20
+  xgb:
+    n_estimators: 300
+    max_depth: 8
+    learning_rate: 0.1
+    subsample: 0.8
+    colsample_bytree: 0.8
+    max_bin: 256
+  lgb:
+    n_estimators: 300
+    num_leaves: 63
+    max_depth: 10
+    learning_rate: 0.1
+    subsample: 0.8
+    subsample_freq: 1
+    colsample_bytree: 0.8
+    min_child_samples: 20
+
 gate:                              # M5
   tau_conf: 0.80
   tau_disagree: 0.20
