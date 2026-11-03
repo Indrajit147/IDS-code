@@ -1,12 +1,12 @@
 # Data (too large / licensed separately) — see README "Dataset facts" and "External data"
-data/
+/data/
 *.csv
 *.parquet
 *.zip
 *.pcap
 
 # Experiment outputs (regenerated; publish selected artifacts in M15)
-results/
+/results/
 
 # Unpublished proposal documents
 *.docx
