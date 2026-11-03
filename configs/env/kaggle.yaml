@@ -1,0 +1,12 @@
+# Kaggle notebook: ~29 GB RAM, optional T4/P100 GPU.
+# Input files are auto-discovered under /kaggle/input by filename, so the
+# private dataset slug does not need to be hard-coded.
+paths:
+  data_root: /kaggle/input
+  processed: /kaggle/working/processed
+  splits: /kaggle/working/splits
+  results_root: /kaggle/working/results/runs
+resources:
+  n_jobs: -1
+  use_dev_sample: false
+  device: cuda
