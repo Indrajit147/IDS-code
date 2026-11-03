@@ -1,0 +1,32 @@
+# Data (too large / licensed separately) — see README "Dataset facts" and "External data"
+data/
+*.csv
+*.parquet
+*.zip
+*.pcap
+
+# Experiment outputs (regenerated; publish selected artifacts in M15)
+results/
+
+# Unpublished proposal documents
+*.docx
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+build/
+dist/
+
+# Notebooks / editors
+.ipynb_checkpoints/
+.vscode/
+.idea/
+
+# LLM weights / caches
+*.gguf
+*.safetensors
+hf_cache/

@@ -1,0 +1,39 @@
+# Default experiment configuration. Environment profiles (configs/env/*.yaml)
+# override only paths/resources; experiment configs (configs/experiments/*.yaml)
+# override method settings. Later milestones fill in their sections.
+
+project: ids-ciciomt2024
+seed: 42
+
+paths:
+  data_root: data                  # resolved relative to repo root unless absolute
+  raw_csv: raw/ciciomt2024_full_8p7m.csv
+  zenodo_dir: external/zenodo_19452870/extracted
+  processed: processed
+  splits: splits
+  results_root: results/runs
+
+resources:
+  n_jobs: -1
+  dev_sample_frac: 0.05            # stratified dev subsample (rare classes kept whole)
+  use_dev_sample: true
+
+labels:
+  headline_target: y_category      # D1: 6-class headline
+  targets: [y_binary, y_category, y_attack19]
+
+timeline:                          # M2 (headline regime D4)
+  windows: [t0, t1, t2, t3, t4, t5]
+
+federation:                        # M2/M7
+  n_clients: 15
+  dirichlet_alpha: 0.5
+
+gate:                              # M5
+  tau_conf: 0.80
+  tau_disagree: 0.20
+
+llm:                               # M11
+  backend: none                    # none | hf_local | llama_cpp | api
+  model_id: google/gemma-2-2b-it
+  quantization: 4bit

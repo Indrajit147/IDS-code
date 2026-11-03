@@ -1,0 +1,7 @@
+# Local dev machine: Windows, 7.7 GB RAM, 12 CPUs, no GPU.
+paths:
+  data_root: data
+resources:
+  n_jobs: 10
+  use_dev_sample: true
+  device: cpu
