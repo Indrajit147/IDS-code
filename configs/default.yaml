@@ -29,10 +29,51 @@ labels:
 
 timeline:                          # M2 (headline regime D4)
   windows: [t0, t1, t2, t3, t4, t5]
+  headline: category_intro
+  build: [category_intro, alt_order]   # timelines materialized by m2_build_partitions.py
+  test_frac: 0.2                   # per (window, class): held-out client-local test share
+  dedup: true                      # drop exact duplicate feature rows (keep first) before splitting
+  # Window in which each attack19 class is INTRODUCED (glob patterns). A class
+  # then recurs with fresh rows in every later window (cumulative stream).
+  definitions:
+    category_intro:                # proposal table; t5 = variant drift + population drift
+      t0: ["Benign", "DoS-*"]
+      t1: ["DDoS-*"]
+      t2: ["Recon-Port-Scan", "Recon-Ping-Sweep"]
+      t3: ["MQTT-*"]
+      t4: ["ARP-Spoofing"]         # + BLE-DoS in the BLE sub-federation
+      t5: ["Recon-OS-Scan", "Recon-VulScan"]
+    alt_order:                     # sensitivity: different family order, t5 population drift only
+      t0: ["Benign", "DDoS-*"]
+      t1: ["MQTT-*"]
+      t2: ["DoS-*"]
+      t3: ["ARP-Spoofing"]
+      t4: ["Recon-*"]
+      t5: []
 
 federation:                        # M2/M7
   n_clients: 15
-  dirichlet_alpha: 0.5
+  dirichlet_alpha: 0.5             # label skew; smaller = more non-IID
+  population_drift:
+    window: t5
+    frac_clients: 0.33             # clients whose attack mix is re-drawn at this window
+    held_back_device_frac: 0.25    # device groups withheld until this window (onboarding)
+
+profiling:                         # Zenodo benign device captures (real device identities)
+  use: true
+  background: ["Active", "ActiveBroker", "Idle"]   # network-wide: spread over all clients
+
+dpub:                              # D2: public calibration set for DA-FedDistill (inputs only)
+  benign: 5000
+  per_category: 3000               # split over the category's classes by size
+  min_per_class: 50
+  max_class_frac: 0.05             # never take more than 5% of a class
+  window_mode: cumulative          # at window t use only classes introduced <= t
+
+ble:                               # separate sub-federation (different feature space)
+  n_clients: 3
+  start_window: t4
+  dev_frac: 0.05                   # BLE subsample for the dev pool
 
 gate:                              # M5
   tau_conf: 0.80
