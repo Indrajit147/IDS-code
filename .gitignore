@@ -30,3 +30,6 @@ dist/
 *.gguf
 *.safetensors
 hf_cache/
+
+# Small tracked report tables
+!reports/**/*.csv

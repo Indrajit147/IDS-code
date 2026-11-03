@@ -40,7 +40,7 @@ Rules:
 | #   | Milestone                                          | Proposal mapping              | Status      | Completed |
 |-----|----------------------------------------------------|-------------------------------|-------------|-----------|
 | M0  | Project scaffolding & environment                  | Reproducibility design        | ✅ Done | 2026-11-04 |
-| M1  | Data ingestion, cleaning & label harmonization     | Dataset preparation 1–4       | ⬜ Not started | — |
+| M1  | Data ingestion, cleaning & label harmonization     | Dataset preparation 1–4       | ✅ Done | 2026-11-04 |
 | M2  | Synthetic drift timeline, clients & D_pub          | Time windows, client sim, D_pub | ⬜ Not started | — |
 | M3  | Edge ensemble + centralized/static baselines       | Edge model, E1, static baseline | ⬜ Not started | — |
 | M4  | Evaluation harness & metrics                       | Evaluation metrics            | ⬜ Not started | — |
@@ -117,7 +117,9 @@ Three loops: the **inference loop** (edge to cloud escalation), the **adaptation
 2. **There is no device-ID or profiling-state column.** "Device-based non-IID" and "client population drift" need a proxy, for example protocol-profile clusters (see M2). The Zenodo Wi-Fi parquet partly fixes this, because it carries `source_file`, including per-device benign profiling captures.
 3. **The data is highly imbalanced.** Benign is 2.6% and DDoS is 67%. Recon-Ping-Sweep (926 rows) and MQTT-Malformed (6,877) are tiny. Use macro metrics and class weights.
 4. **The file is sorted by label.** Any sample must be shuffled or stratified, never `head()`.
-5. **Constant columns:** `Drate`, `Telnet`, `IRC` and `SMTP` were constant in a 300k-row sample. Confirm on the full data in M1. No NaN or inf values were seen in the sample.
+5. **Constant columns:** on the full data only `Drate` is constant (verified in M1). `Telnet`, `IRC` and `SMTP` only looked constant in an early 300k-row sample. There are no NaN or inf values.
+6. **Shortcut features (M1 EDA):** `IAT` alone gives 0.83 6-class macro-F1 and BLE `timestamp` alone gives 0.97. These look like capture artifacts rather than attack behaviour (decision D6).
+7. **Duplicates:** 7,379 exact duplicate rows (0.08%), all within a single class (no conflicting labels), mostly Recon-Port-Scan. The Zenodo Wi-Fi table is effectively a de-duplicated copy of this CSV.
 
 ## External data: Zenodo CICIoMT2024 derivative (incl. Bluetooth)
 
@@ -162,6 +164,7 @@ The proposal ends with five open questions. Development proceeds with the defaul
 | D3 | LLM override | **Conservative override**: allowed only when there is high disagreement *and* a drift flag; always logged | Matches the proposal's risk mitigation |
 | D4 | Headline drift regime | **Attack-category introduction** (t0→t5); variant and population drift as secondary | Clear and class-incremental |
 | D5 | Privacy section | **Short analysis** of what is shared (soft labels on D_pub, drift stats, escalated evidence) | Low cost, expected by TNSM reviewers |
+| D6 | Shortcut features (added in M1) | **Exclude `IAT` (Wi-Fi) and `cumulative_packet_count` (BLE) from modelling**; BLE `timestamp` is never a feature. A with-IAT run is reported as sensitivity in M14 | `IAT` alone reaches 0.83 macro-F1, so it likely encodes capture time; excluding it gives conservative, reviewer-proof results. Toggle: `features.exclude_wifi` |
 
 ---
 
@@ -193,7 +196,8 @@ IDS-code/
 ├── scripts/                      # CLI entry points per milestone
 ├── notebooks/                    # kaggle_bootstrap.ipynb; later Notebook A (train/FL) and B (inference/LLM/XAI)
 ├── tests/
-└── results/runs/<run_id>/        # config snapshot, metrics, logs, figures
+├── reports/m<k>/                 # tracked milestone reports (EDA, figures, manifests)
+└── results/runs/<run_id>/        # untracked: config snapshot, metrics, logs
 ```
 
 ---
@@ -220,14 +224,27 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 
 ### M1: Data ingestion, cleaning & label harmonization
 **Goal:** a fast, memory-safe, auditable processed dataset.
-- [ ] Record the SHA-256 and the row/column counts of the raw CSV
-- [ ] Chunked CSV → Parquet with float32 downcasting
-- [ ] Labels: `y_binary` {benign, attack}, `y_category` (6), `y_attack19` (19)
-- [ ] Drop constant columns (verified on the full data); check NaN/inf and duplicates (report, don't silently drop)
-- [ ] Stratified dev subsample (e.g. 5–10%, with all rare classes kept in full) for fast iteration
-- [ ] EDA report: class counts, feature stats, correlation, per-class feature shifts
+- [x] Record the SHA-256 and the row/column counts of the raw CSV
+- [x] Chunked CSV → Parquet with float32 downcasting. A column stays float64 when the float32 cast would merge more than 0.1% of its distinct values
+- [x] Labels: `y_binary` {benign, attack}, `y_category` (6), `y_attack19` (19), using fixed integer codes from `src/ids/data/schema.py`; Sub_Attack/Major_Label consistency asserted on every chunk
+- [x] Constant columns found on the full data (excluded by the loader, not deleted); NaN/inf checked; exact duplicates and label conflicts reported, not dropped
+- [x] Stratified dev subsample: 5% per class, ≥20k rows per class, rare classes whole, with per-class prior weights
+- [x] BLE: Zenodo `UNKNOWN` relabelled to `BLE-DoS`, with an asserted invariant that every such row comes from a DoS capture file; all-NaN columns dropped
+- [x] Wi-Fi device profiling: 361k benign rows from 42 device/scenario captures saved for M2
+- [x] EDA report: class counts, feature stats, correlation, per-class profiles, single-feature shortcut check, Zenodo-vs-CSV audit
 - **Deliverables:** `data/processed/*.parquet`, `data_manifest.json`, EDA figures.
 - **Acceptance:** loading the full Parquet fits in under 3 GB of RAM, and the label counts match the table above.
+
+**Results (2026-11-04)**
+- Run: `python scripts/m1_prepare_data.py` (~100 s) then `python scripts/m1_eda.py`. Report: [`reports/m1/EDA.md`](reports/m1/EDA.md); manifest: [`reports/m1/data_manifest.json`](reports/m1/data_manifest.json).
+- Raw CSV SHA-256 `f7cb6fe3…f0eb6`, 8,775,013 × 47. Label counts match the table above exactly.
+- Processed: `wifi_mqtt_full.parquet` **249 MB** (from 2.4 GB CSV), `wifi_mqtt_dev.parquet` 29 MB (568,146 rows), `ble.parquet` 10 MB, `wifi_profiling.parquet` 11 MB.
+- float64 kept for `Rate, Srate, AVG, Std, IAT, Magnitue, Radius, Covariance`; float32 for the other 37.
+- Constant: only `Drate`. NaN/inf: 0. Duplicates: 7,379 rows (0.08%), 0 conflicting-label groups.
+- Memory to load the full data (all 44 non-excluded columns): 1.8 GB dataframe, 1.8 GB peak resident, 3.2 GB peak committed (down from 4.6 GB after switching to pyarrow `split_blocks`/`self_destruct`). Loads in about 9 s. **Pass.**
+- Redundant pairs (|ρ| ≥ 0.98): Rate~Srate, IPv~LLC~(−ARP), AVG~Magnitue~Tot_size, Number~Weight, Radius~Covariance~Std. They are kept for now, because trees tolerate redundant features; M9 feature selection decides.
+- Shortcut check → **D6**: `IAT` excluded from modelling by default. BLE `hci_event_code` (0.95) and `packet_length` (0.93) are strong but plausibly real DoS behaviour, so they are kept.
+- Tests: 13 passing (`tests/test_data.py` covers label encoding, round-trip, dtype rule, duplicates, sampling, row extraction, BLE relabel invariant, feature exclusion).
 
 ### M2: Synthetic drift timeline, non-IID clients & D_pub
 **Goal:** the experimental world (windows × clients) written as JSON so it can be reproduced.
@@ -358,3 +375,4 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 | 2026-11-04 | — | Plan created: dataset profiled (8.78M rows, 19 classes, no BLE/device columns), environment checked, milestones M0–M15 defined. |
 | 2026-11-04 | — | BLE data found: downloaded the Zenodo CICIoMT2024 derivative (CC BY 4.0; Bluetooth 1.55M packet rows; Wi-Fi parquet with device `source_file` + official split). t4 can now include BLE DoS. |
 | 2026-11-04 | M0 ✅ | Scaffolding done: package `ids`, layered configs (local/kaggle), seeding, JSONL logging, run snapshots, Kaggle bootstrap notebook; 6 tests pass. Compute plan set to hybrid local + Kaggle. Repo pushed to GitHub. |
+| 2026-11-04 | M1 ✅ | Data prep done: 8.78M rows → 249 MB Parquet (lossless, fixed label codes), dev sample 568k, BLE relabelled, 42 device-profiling captures extracted. EDA found the IAT/timestamp shortcut features → new decision D6 (exclude IAT by default). Only `Drate` is constant; 7,379 duplicates with no label conflicts. 13 tests pass. |
