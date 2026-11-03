@@ -15,8 +15,13 @@ paths:
 
 resources:
   n_jobs: -1
-  dev_sample_frac: 0.05            # stratified dev subsample (rare classes kept whole)
+  dev_sample_frac: 0.05            # stratified dev subsample ...
+  dev_sample_floor: 20000          # ... classes with <= floor rows kept whole, others >= floor
   use_dev_sample: true
+
+features:                          # D6 (see README / reports/m1/EDA.md shortcut check)
+  exclude_wifi: [IAT]              # alone gives 0.83 6-class macro-F1 -> likely capture artifact
+  exclude_ble: [cumulative_packet_count]  # per-capture packet counter (timestamp is never a feature)
 
 labels:
   headline_target: y_category      # D1: 6-class headline

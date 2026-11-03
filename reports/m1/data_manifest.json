@@ -1,0 +1,893 @@
+{
+  "label_maps": {
+    "y_attack19": [
+      "Benign",
+      "DDoS-ICMP",
+      "DDoS-SYN",
+      "DDoS-TCP",
+      "DDoS-UDP",
+      "DoS-ICMP",
+      "DoS-SYN",
+      "DoS-TCP",
+      "DoS-UDP",
+      "Recon-OS-Scan",
+      "Recon-Ping-Sweep",
+      "Recon-Port-Scan",
+      "Recon-VulScan",
+      "MQTT-DDoS-Connect-Flood",
+      "MQTT-DDoS-Publish-Flood",
+      "MQTT-DoS-Connect-Flood",
+      "MQTT-DoS-Publish-Flood",
+      "MQTT-Malformed-Data",
+      "ARP-Spoofing"
+    ],
+    "y_category": [
+      "benign",
+      "ddos",
+      "dos",
+      "recon",
+      "mqtt",
+      "spoofing"
+    ],
+    "y_binary": [
+      "benign",
+      "attack"
+    ],
+    "attack19_to_category": [
+      0,
+      1,
+      1,
+      1,
+      1,
+      2,
+      2,
+      2,
+      2,
+      3,
+      3,
+      3,
+      3,
+      4,
+      4,
+      4,
+      4,
+      4,
+      5
+    ]
+  },
+  "features_all": [
+    "Header_Length",
+    "Protocol_Type",
+    "Duration",
+    "Rate",
+    "Srate",
+    "Drate",
+    "fin_flag_number",
+    "syn_flag_number",
+    "rst_flag_number",
+    "psh_flag_number",
+    "ack_flag_number",
+    "ece_flag_number",
+    "cwr_flag_number",
+    "ack_count",
+    "syn_count",
+    "fin_count",
+    "rst_count",
+    "HTTP",
+    "HTTPS",
+    "DNS",
+    "Telnet",
+    "SMTP",
+    "SSH",
+    "IRC",
+    "TCP",
+    "UDP",
+    "DHCP",
+    "ARP",
+    "ICMP",
+    "IGMP",
+    "IPv",
+    "LLC",
+    "Tot_sum",
+    "Min",
+    "Max",
+    "AVG",
+    "Std",
+    "Tot_size",
+    "IAT",
+    "Number",
+    "Magnitue",
+    "Radius",
+    "Covariance",
+    "Variance",
+    "Weight"
+  ],
+  "raw": {
+    "path": "E:\\Papers\\IDS-code\\data\\raw\\ciciomt2024_full_8p7m.csv",
+    "bytes": 2404149218,
+    "sha256": "f7cb6fe30c4e4f0cb415a5e888f9bfcc7a652189a094447c72b8428b6b8f0eb6",
+    "n_rows": 8775013,
+    "n_cols": 47
+  },
+  "class_counts_attack19": {
+    "Benign": 230339,
+    "DDoS-ICMP": 1887175,
+    "DDoS-SYN": 974359,
+    "DDoS-TCP": 987063,
+    "DDoS-UDP": 1998026,
+    "DoS-ICMP": 514724,
+    "DoS-SYN": 540498,
+    "DoS-TCP": 462480,
+    "DoS-UDP": 704503,
+    "Recon-OS-Scan": 20666,
+    "Recon-Ping-Sweep": 926,
+    "Recon-Port-Scan": 106603,
+    "Recon-VulScan": 3207,
+    "MQTT-DDoS-Connect-Flood": 214952,
+    "MQTT-DDoS-Publish-Flood": 36039,
+    "MQTT-DoS-Connect-Flood": 15904,
+    "MQTT-DoS-Publish-Flood": 52881,
+    "MQTT-Malformed-Data": 6877,
+    "ARP-Spoofing": 17791
+  },
+  "column_stats": {
+    "Header_Length": {
+      "min": 0.0,
+      "max": 9896704.0,
+      "mean": 29962.471659271523,
+      "std": 282363.37778161134,
+      "n_nan": 0,
+      "n_inf": 0
+    },
+    "Protocol_Type": {
+      "min": 0.0,
+      "max": 17.0,
+      "mean": 8.047203266646672,
+      "std": 6.304831821968031,
+      "n_nan": 0,
+      "n_inf": 0
+    },
+    "Duration": {
+      "min": 0.0,
+      "max": 255.0,
+      "mean": 64.63690877789459,
+      "std": 7.853065110876447,
+      "n_nan": 0,
+      "n_inf": 0
+    },
+    "Rate": {
+      "min": 0.0,
+      "max": 2097152.0,
+      "mean": 15744.489461043873,
+      "std": 40008.544018096865,
+      "n_nan": 0,
+      "n_inf": 0
+    },
+    "Srate": {
+      "min": 0.0,
+      "max": 2097152.0,
+      "mean": 15744.489461043873,
+      "std": 40008.544018096865,
+      "n_nan": 0,
+      "n_inf": 0
+    },
+    "Drate": {
+      "min": 0.0,
+      "max": 0.0,
+      "mean": 0.0,
+      "std": 0.0,
+      "n_nan": 0,
+      "n_inf": 0
+    },
+    "fin_flag_number": {
+      "min": 0.0,
+      "max": 1.0,
+      "mean": 0.005123298142018017,
+      "std": 0.03415861509642378,
+      "n_nan": 0,
+      "n_inf": 0
+    },
+    "syn_flag_number": {
+      "min": 0.0,
+      "max": 1.0,
+      "mean": 0.157211530535068,
+      "std": 0.33687884571010257,
+      "n_nan": 0,
+      "n_inf": 0
+    },
+    "rst_flag_number": {
+      "min": 0.0,
+      "max": 1.0,
+      "mean": 0.0395183770129937,
+      "std": 0.13929946068802243,
+      "n_nan": 0,
+      "n_inf": 0
+    },
+    "psh_flag_number": {
+      "min": 0.0,
+      "max": 1.0,
+      "mean": 0.02217887279437258,
+      "std": 0.0965353991391266,
+      "n_nan": 0,
+      "n_inf": 0
+    },
+    "ack_flag_number": {
+      "min": 0.0,
+      "max": 1.0,
+      "mean": 0.09566386738719938,
+      "std": 0.2521415110070269,
+      "n_nan": 0,
+      "n_inf": 0
+    },
+    "ece_flag_number": {
+      "min": 0.0,
+      "max": 0.2,
+      "mean": 2.9086919328563416e-06,
+      "std": 0.0005036040315269987,
+      "n_nan": 0,
+      "n_inf": 0
+    },
+    "cwr_flag_number": {
+      "min": 0.0,
+      "max": 0.2,
+      "mean": 1.9206592085743374e-06,
+      "std": 0.000379658363321917,
+      "n_nan": 0,
+      "n_inf": 0
+    },
+    "ack_count": {
+      "min": 0.0,
+      "max": 11.2,
+      "mean": 0.02797713093472856,
+      "std": 0.17825564234452457,
+      "n_nan": 0,
+      "n_inf": 0
+    },
+    "syn_count": {
+      "min": 0.0,
+      "max": 10.7,
+      "mean": 0.2938791970745221,
+      "std": 0.6036414093952764,
+      "n_nan": 0,
+      "n_inf": 0
+    },
+    "fin_count": {
+      "min": 0.0,
+      "max": 151.74,
+      "mean": 0.08557530837003607,
+      "std": 0.5612390495959386,
+      "n_nan": 0,
+      "n_inf": 0
+    },
+    "rst_count": {
+      "min": 0.0,
+      "max": 9576.5,
+      "mean": 65.8712671795612,
+      "std": 498.2811826295844,
+      "n_nan": 0,
+      "n_inf": 0
+    },
+    "HTTP": {
+      "min": 0.0,
+      "max": 1.0,
+      "mean": 0.0008676667107691654,
+      "std": 0.028421501525945844,
+      "n_nan": 0,
+      "n_inf": 0
+    },
+    "HTTPS": {
+      "min": 0.0,
+      "max": 1.0,
+      "mean": 0.005590280114219405,
+      "std": 0.06034020538174124,
+      "n_nan": 0,
+      "n_inf": 0
+    },
+    "DNS": {
+      "min": 0.0,
+      "max": 1.0,
+      "mean": 0.000151558505514069,
+      "std": 0.00524780281254923,
+      "n_nan": 0,
+      "n_inf": 0
+    },
+    "Telnet": {
+      "min": 0.0,
+      "max": 0.1,
+      "mean": 1.2544984173081436e-05,
+      "std": 0.0008916875723046959,
+      "n_nan": 0,
+      "n_inf": 0
+    },
+    "SMTP": {
+      "min": 0.0,
+      "max": 0.1,
+      "mean": 1.2544739973199015e-05,
+      "std": 0.0008917079521893743,
+      "n_nan": 0,
+      "n_inf": 0
+    },
+    "SSH": {
+      "min": 0.0,
+      "max": 1.0,
+      "mean": 2.6110658463702806e-05,
+      "std": 0.0027190315600487437,
+      "n_nan": 0,
+      "n_inf": 0
+    },
+    "IRC": {
+      "min": 0.0,
+      "max": 0.1111111111111111,
+      "mean": 1.2532575201278333e-05,
+      "std": 0.0008923358329759757,
+      "n_nan": 0,
+      "n_inf": 0
+    },
+    "TCP": {
+      "min": 0.0,
+      "max": 1.0,
+      "mean": 0.414871020961118,
+      "std": 0.48990274795493943,
+      "n_nan": 0,
+      "n_inf": 0
+    },
+    "UDP": {
+      "min": 0.0,
+      "max": 1.0,
+      "mean": 0.31084898042869474,
+      "std": 0.4595664119615065,
+      "n_nan": 0,
+      "n_inf": 0
+    },
+    "DHCP": {
+      "min": 0.0,
+      "max": 0.6,
+      "mean": 3.259254430734177e-06,
+      "std": 0.0009865935599824118,
+      "n_nan": 0,
+      "n_inf": 0
+    },
+    "ARP": {
+      "min": 0.0,
+      "max": 1.0,
+      "mean": 0.0007607489122892597,
+      "std": 0.019283885697020258,
+      "n_nan": 0,
+      "n_inf": 0
+    },
+    "ICMP": {
+      "min": 0.0,
+      "max": 1.0,
+      "mean": 0.2735134787662767,
+      "std": 0.44404868167495953,
+      "n_nan": 0,
+      "n_inf": 0
+    },
+    "IGMP": {
+      "min": 0.0,
+      "max": 0.7,
+      "mean": 4.4740674458260075e-06,
+      "std": 0.0012064973874199882,
+      "n_nan": 0,
+      "n_inf": 0
+    },
+    "IPv": {
+      "min": 0.0,
+      "max": 1.0,
+      "mean": 0.9992392510877107,
+      "std": 0.019283885697022947,
+      "n_nan": 0,
+      "n_inf": 0
+    },
+    "LLC": {
+      "min": 0.0,
+      "max": 1.0,
+      "mean": 0.9992392510877107,
+      "std": 0.019283885697022947,
+      "n_nan": 0,
+      "n_inf": 0
+    },
+    "Tot_sum": {
+      "min": 42.0,
+      "max": 23467.0,
+      "mean": 636.011379685025,
+      "std": 991.6090431572558,
+      "n_nan": 0,
+      "n_inf": 0
+    },
+    "Min": {
+      "min": 42.0,
+      "max": 1514.0,
+      "mean": 55.12016135536588,
+      "std": 69.09937258903176,
+      "n_nan": 0,
+      "n_inf": 0
+    },
+    "Max": {
+      "min": 42.0,
+      "max": 1514.0,
+      "mean": 72.33250733118848,
+      "std": 133.6090390473635,
+      "n_nan": 0,
+      "n_inf": 0
+    },
+    "AVG": {
+      "min": 42.0,
+      "max": 1514.0,
+      "mean": 60.58651321842842,
+      "std": 88.07201688056998,
+      "n_nan": 0,
+      "n_inf": 0
+    },
+    "Std": {
+      "min": 0.0,
+      "max": 721.1508702338549,
+      "mean": 6.060536943961618,
+      "std": 38.05785477477198,
+      "n_nan": 0,
+      "n_inf": 0
+    },
+    "Tot_size": {
+      "min": 42.0,
+      "max": 1514.0,
+      "mean": 60.5890934431859,
+      "std": 87.87687476702742,
+      "n_nan": 0,
+      "n_inf": 0
+    },
+    "IAT": {
+      "min": -1.2820612907409668,
+      "max": 169470846.2390086,
+      "mean": 84683677.94567503,
+      "std": 17819168.538262777,
+      "n_nan": 0,
+      "n_inf": 0
+    },
+    "Number": {
+      "min": 1.0,
+      "max": 15.0,
+      "mean": 9.499086088123844,
+      "std": 0.8415773342478152,
+      "n_nan": 0,
+      "n_inf": 0
+    },
+    "Magnitue": {
+      "min": 9.165151389911676,
+      "max": 55.02726596879042,
+      "mean": 10.438245138977932,
+      "std": 3.158073051270995,
+      "n_nan": 0,
+      "n_inf": 0
+    },
+    "Radius": {
+      "min": 0.0,
+      "max": 1020.2320312913092,
+      "mean": 8.560009773419806,
+      "std": 53.804500372519726,
+      "n_nan": 0,
+      "n_inf": 0
+    },
+    "Covariance": {
+      "min": 0.0,
+      "max": 520437.8874683046,
+      "mean": 2370.5447475754318,
+      "std": 19758.814371223725,
+      "n_nan": 0,
+      "n_inf": 0
+    },
+    "Variance": {
+      "min": 0.0,
+      "max": 1.0,
+      "mean": 0.09074361520264033,
+      "std": 0.23297908293982392,
+      "n_nan": 0,
+      "n_inf": 0
+    },
+    "Weight": {
+      "min": 1.0,
+      "max": 244.6,
+      "mean": 141.52734218686024,
+      "std": 21.661885261138018,
+      "n_nan": 0,
+      "n_inf": 0
+    }
+  },
+  "dtypes": {
+    "Header_Length": "float32",
+    "Protocol_Type": "float32",
+    "Duration": "float32",
+    "Rate": "float64",
+    "Srate": "float64",
+    "Drate": "float32",
+    "fin_flag_number": "float32",
+    "syn_flag_number": "float32",
+    "rst_flag_number": "float32",
+    "psh_flag_number": "float32",
+    "ack_flag_number": "float32",
+    "ece_flag_number": "float32",
+    "cwr_flag_number": "float32",
+    "ack_count": "float32",
+    "syn_count": "float32",
+    "fin_count": "float32",
+    "rst_count": "float32",
+    "HTTP": "float32",
+    "HTTPS": "float32",
+    "DNS": "float32",
+    "Telnet": "float32",
+    "SMTP": "float32",
+    "SSH": "float32",
+    "IRC": "float32",
+    "TCP": "float32",
+    "UDP": "float32",
+    "DHCP": "float32",
+    "ARP": "float32",
+    "ICMP": "float32",
+    "IGMP": "float32",
+    "IPv": "float32",
+    "LLC": "float32",
+    "Tot_sum": "float32",
+    "Min": "float32",
+    "Max": "float32",
+    "AVG": "float64",
+    "Std": "float64",
+    "Tot_size": "float32",
+    "IAT": "float64",
+    "Number": "float32",
+    "Magnitue": "float64",
+    "Radius": "float64",
+    "Covariance": "float64",
+    "Variance": "float32",
+    "Weight": "float32"
+  },
+  "cleaning": {
+    "constant_columns": [
+      "Drate"
+    ],
+    "n_nan_total": 0,
+    "n_inf_total": 0,
+    "policy": "lossless parquet; constant columns excluded by loader; duplicates reported, not dropped"
+  },
+  "duplicates": {
+    "n_rows": 8775013,
+    "n_unique_feature_rows": 8767634,
+    "n_duplicate_rows": 7379,
+    "n_duplicate_groups": 4441,
+    "n_conflicting_label_groups": 0,
+    "n_rows_in_conflicting_groups": 0,
+    "duplicate_rows_by_class": {
+      "DDoS-ICMP": 657,
+      "DDoS-SYN": 16,
+      "DDoS-TCP": 1,
+      "Recon-OS-Scan": 1008,
+      "Recon-Port-Scan": 5630,
+      "Recon-VulScan": 67
+    }
+  },
+  "full_parquet": {
+    "path": "E:\\Papers\\IDS-code\\data\\processed\\wifi_mqtt_full.parquet",
+    "bytes": 249259930,
+    "n_rows": 8775013
+  },
+  "dev_sample": {
+    "frac": 0.05,
+    "floor": 20000,
+    "n_rows": 568146,
+    "per_class": {
+      "Benign": {
+        "n_full": 230339,
+        "n_sample": 20000,
+        "weight": 11.51695
+      },
+      "DDoS-ICMP": {
+        "n_full": 1887175,
+        "n_sample": 94359,
+        "weight": 19.999947010883965
+      },
+      "DDoS-SYN": {
+        "n_full": 974359,
+        "n_sample": 48718,
+        "weight": 19.999979473705817
+      },
+      "DDoS-TCP": {
+        "n_full": 987063,
+        "n_sample": 49353,
+        "weight": 20.000060786578324
+      },
+      "DDoS-UDP": {
+        "n_full": 1998026,
+        "n_sample": 99901,
+        "weight": 20.000060059458864
+      },
+      "DoS-ICMP": {
+        "n_full": 514724,
+        "n_sample": 25736,
+        "weight": 20.00015542430836
+      },
+      "DoS-SYN": {
+        "n_full": 540498,
+        "n_sample": 27025,
+        "weight": 19.999925994449583
+      },
+      "DoS-TCP": {
+        "n_full": 462480,
+        "n_sample": 23124,
+        "weight": 20.0
+      },
+      "DoS-UDP": {
+        "n_full": 704503,
+        "n_sample": 35225,
+        "weight": 20.000085166784952
+      },
+      "Recon-OS-Scan": {
+        "n_full": 20666,
+        "n_sample": 20000,
+        "weight": 1.0333
+      },
+      "Recon-Ping-Sweep": {
+        "n_full": 926,
+        "n_sample": 926,
+        "weight": 1.0
+      },
+      "Recon-Port-Scan": {
+        "n_full": 106603,
+        "n_sample": 20000,
+        "weight": 5.33015
+      },
+      "Recon-VulScan": {
+        "n_full": 3207,
+        "n_sample": 3207,
+        "weight": 1.0
+      },
+      "MQTT-DDoS-Connect-Flood": {
+        "n_full": 214952,
+        "n_sample": 20000,
+        "weight": 10.7476
+      },
+      "MQTT-DDoS-Publish-Flood": {
+        "n_full": 36039,
+        "n_sample": 20000,
+        "weight": 1.80195
+      },
+      "MQTT-DoS-Connect-Flood": {
+        "n_full": 15904,
+        "n_sample": 15904,
+        "weight": 1.0
+      },
+      "MQTT-DoS-Publish-Flood": {
+        "n_full": 52881,
+        "n_sample": 20000,
+        "weight": 2.64405
+      },
+      "MQTT-Malformed-Data": {
+        "n_full": 6877,
+        "n_sample": 6877,
+        "weight": 1.0
+      },
+      "ARP-Spoofing": {
+        "n_full": 17791,
+        "n_sample": 17791,
+        "weight": 1.0
+      }
+    }
+  },
+  "ble": {
+    "source": "E:\\Papers\\IDS-code\\data\\external\\zenodo_19452870\\extracted\\bluetooth_clean.parquet",
+    "n_rows": 1547894,
+    "dropped_all_nan_columns": [
+      "ble_access_addr",
+      "ble_pdu_type"
+    ],
+    "features": [
+      "packet_length",
+      "inter_packet_gap",
+      "hci_type",
+      "hci_event_code",
+      "l2cap_length",
+      "cumulative_packet_count"
+    ],
+    "counts_by_label_split": [
+      {
+        "y_attack": "BLE-DoS",
+        "split": "test",
+        "n": 251708
+      },
+      {
+        "y_attack": "BLE-DoS",
+        "split": "train",
+        "n": 998391
+      },
+      {
+        "y_attack": "Benign",
+        "split": "profiling",
+        "n": 14972
+      },
+      {
+        "y_attack": "Benign",
+        "split": "test",
+        "n": 65330
+      },
+      {
+        "y_attack": "Benign",
+        "split": "train",
+        "n": 217493
+      }
+    ],
+    "n_nan_by_feature": {
+      "packet_length": 0,
+      "inter_packet_gap": 0,
+      "hci_type": 0,
+      "hci_event_code": 0,
+      "l2cap_length": 0,
+      "cumulative_packet_count": 0
+    }
+  },
+  "wifi_profiling": {
+    "source": "E:\\Papers\\IDS-code\\data\\external\\zenodo_19452870\\extracted\\wifi_mqtt_clean.parquet",
+    "n_rows": 361081,
+    "n_device_scenarios": 42,
+    "rows_per_device_scenario": {
+      "ActiveBroker": 169733,
+      "Active": 102880,
+      "Idle": 32688,
+      "Owltron_Camera_WAN_RECORDING": 4014,
+      "Owltron_Camera_LAN_MIC": 3893,
+      "Ecobee_Camera_LAN_MIC": 3874,
+      "Owltron_Camera_WAN_MIC": 3734,
+      "Owltron_Camera_LAN_RECORDING": 3667,
+      "Ecobee_Camera_LAN_WATCH": 3664,
+      "Ecobee_Camera_WAN_MIC": 3585,
+      "Owltron_Camera_WAN_WATCH": 3506,
+      "Ecobee_Camera_WAN_WATCH": 3337,
+      "Owltron_Camera_LAN_WATCH": 3062,
+      "Blink_Camera_WAN_MIC": 2218,
+      "Blink_Camera_LAN_MIC": 2146,
+      "Blink_Camera_LAN_WATCH": 1883,
+      "M1T_Camera_WAN_MIC": 1736,
+      "M1T_Camera_WAN_RECORDING": 1645,
+      "M1T_Camera_LAN_MIC": 1611,
+      "Blink_Camera_WAN_WATCH": 1586,
+      "M1T_Camera_WAN_WATCH": 1576,
+      "M1T_Camera_LAN_WATCH": 1187,
+      "Owltron_Camera_LAN_PHOTO": 881,
+      "M1T_Camera_LAN_PRECORDING": 849,
+      "M1T_Camera_WAN_PHOTO": 577,
+      "Owltron_Camera_WAN_PHOTO": 570,
+      "Ecobee_Camera_Power": 250,
+      "M1T_Camera_LAN_PHOTO": 144,
+      "Owltron_Camera_Power": 121,
+      "Multifunctional_Pager_Power": 72,
+      "Blink_Mini_Camera_Power": 57,
+      "Singcall_Power": 51,
+      "Multifunctional_Pager_LAN_APP": 44,
+      "Singcall_LAN_PHYSICAL": 42,
+      "M1T_Camera_Power": 41,
+      "Singcall_WAN_PHYSICAL": 34,
+      "SenseUBaby_Power": 33,
+      "SenseU_LAN_EMERGENCY": 22,
+      "Multifunctional_Pager_LAN_PHYSICAL": 21,
+      "Multifunctional_Pager_WAN_APP": 21,
+      "SenseU_WAN_EMERGENCY": 16,
+      "Multifunctional_Pager_WAN_PHYSICAL": 10
+    }
+  },
+  "zenodo_vs_csv": {
+    "per_class": [
+      {
+        "class": "Benign",
+        "csv": 230339,
+        "zenodo_train_test": 230339,
+        "diff": 0
+      },
+      {
+        "class": "DDoS-ICMP",
+        "csv": 1887175,
+        "zenodo_train_test": 1886518,
+        "diff": -657
+      },
+      {
+        "class": "DDoS-SYN",
+        "csv": 974359,
+        "zenodo_train_test": 974343,
+        "diff": -16
+      },
+      {
+        "class": "DDoS-TCP",
+        "csv": 987063,
+        "zenodo_train_test": 987062,
+        "diff": -1
+      },
+      {
+        "class": "DDoS-UDP",
+        "csv": 1998026,
+        "zenodo_train_test": 1998026,
+        "diff": 0
+      },
+      {
+        "class": "DoS-ICMP",
+        "csv": 514724,
+        "zenodo_train_test": 514724,
+        "diff": 0
+      },
+      {
+        "class": "DoS-SYN",
+        "csv": 540498,
+        "zenodo_train_test": 540498,
+        "diff": 0
+      },
+      {
+        "class": "DoS-TCP",
+        "csv": 462480,
+        "zenodo_train_test": 462480,
+        "diff": 0
+      },
+      {
+        "class": "DoS-UDP",
+        "csv": 704503,
+        "zenodo_train_test": 704503,
+        "diff": 0
+      },
+      {
+        "class": "Recon-OS-Scan",
+        "csv": 20666,
+        "zenodo_train_test": 19658,
+        "diff": -1008
+      },
+      {
+        "class": "Recon-Ping-Sweep",
+        "csv": 926,
+        "zenodo_train_test": 926,
+        "diff": 0
+      },
+      {
+        "class": "Recon-Port-Scan",
+        "csv": 106603,
+        "zenodo_train_test": 101168,
+        "diff": -5435
+      },
+      {
+        "class": "Recon-VulScan",
+        "csv": 3207,
+        "zenodo_train_test": 3140,
+        "diff": -67
+      },
+      {
+        "class": "MQTT-DDoS-Connect-Flood",
+        "csv": 214952,
+        "zenodo_train_test": 214952,
+        "diff": 0
+      },
+      {
+        "class": "MQTT-DDoS-Publish-Flood",
+        "csv": 36039,
+        "zenodo_train_test": 36039,
+        "diff": 0
+      },
+      {
+        "class": "MQTT-DoS-Connect-Flood",
+        "csv": 15904,
+        "zenodo_train_test": 15904,
+        "diff": 0
+      },
+      {
+        "class": "MQTT-DoS-Publish-Flood",
+        "csv": 52881,
+        "zenodo_train_test": 52881,
+        "diff": 0
+      },
+      {
+        "class": "MQTT-Malformed-Data",
+        "csv": 6877,
+        "zenodo_train_test": 6877,
+        "diff": 0
+      },
+      {
+        "class": "ARP-Spoofing",
+        "csv": 17791,
+        "zenodo_train_test": 17791,
+        "diff": 0
+      }
+    ],
+    "csv_total": 8775013,
+    "zenodo_total": 8767829
+  }
+}
