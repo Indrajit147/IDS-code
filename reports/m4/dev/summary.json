@@ -250,42 +250,42 @@
   "latency": {
     "t0": {
       "xgb": {
-        "single_ms_p50": 0.2696000155992806,
-        "single_ms_p95": 0.5162249726708978,
+        "single_ms_p50": 0.3371500060893595,
+        "single_ms_p95": 0.6452350236941129,
         "batch_rows": 10000,
-        "batch_us_per_row": 1.3600900012534112
+        "batch_us_per_row": 1.7827100004069507
       },
       "lgb": {
-        "single_ms_p50": 0.04639997496269643,
-        "single_ms_p95": 0.06510497187264266,
+        "single_ms_p50": 0.072750000981614,
+        "single_ms_p95": 0.12503496545832607,
         "batch_rows": 10000,
-        "batch_us_per_row": 6.954259995836765
+        "batch_us_per_row": 11.722870002267882
       },
       "ensemble": {
-        "single_ms_p50": 0.4388500237837434,
-        "single_ms_p95": 0.5959449976217002,
+        "single_ms_p50": 0.572100019780919,
+        "single_ms_p95": 1.156939999782481,
         "batch_rows": 10000,
-        "batch_us_per_row": 7.337030000053346
+        "batch_us_per_row": 13.370649999706075
       }
     },
     "t5": {
       "xgb": {
-        "single_ms_p50": 2.23869999172166,
-        "single_ms_p95": 3.6409799969987966,
+        "single_ms_p50": 2.955550007754937,
+        "single_ms_p95": 5.159639986231923,
         "batch_rows": 10000,
-        "batch_us_per_row": 37.025109998648986
+        "batch_us_per_row": 48.571400000946596
       },
       "lgb": {
-        "single_ms_p50": 0.1317999849561602,
-        "single_ms_p95": 0.21691996371373534,
+        "single_ms_p50": 0.18905001343227923,
+        "single_ms_p95": 0.3716049774084241,
         "batch_rows": 10000,
-        "batch_us_per_row": 73.91467000124976
+        "batch_us_per_row": 88.38828000007197
       },
       "ensemble": {
-        "single_ms_p50": 2.9326999792829156,
-        "single_ms_p95": 4.737585032125935,
+        "single_ms_p50": 3.9084999880287796,
+        "single_ms_p95": 6.162205006694421,
         "batch_rows": 10000,
-        "batch_us_per_row": 99.34491000021808
+        "batch_us_per_row": 133.13186999876052
       }
     }
   },

@@ -19,7 +19,7 @@ from ids.data.io import ble_features, model_features
 from ids.data.schema import ATTACKS19, CATEGORIES
 from ids.eval.harness import Evaluator, load_ble_test_sets, load_test_sets, predict_global
 from ids.eval.plots import fig_confusions, fig_curves, fig_matrix
-from ids.models.edge import EdgeConfig, EdgeEnsemble, measure_latency
+from ids.models.edge import EdgeConfig, EdgeEnsemble, measure_latency, val_split
 from ids.partition.io import load_ble_rows, load_rows
 from ids.utils import Run, load_config, set_global_seed
 from ids.utils.config import REPO_ROOT
@@ -27,17 +27,6 @@ from ids.utils.jsonl import dumps
 from ids.utils.seed import rng
 
 CLASS_NAMES = {"y_category": CATEGORIES, "y_attack19": ATTACKS19, "y_binary": ["benign", "attack"]}
-
-
-def val_split(y: np.ndarray, frac: float, seed: int, key) -> np.ndarray:
-    """Stratified boolean validation mask (>=1 row per class with >=2 rows)."""
-    m = np.zeros(len(y), bool)
-    for c in np.unique(y):
-        idx = np.flatnonzero(y == c)
-        k = min(max(int(round(frac * len(idx))), 1), len(idx) - 1) if len(idx) >= 2 else 0
-        if k:
-            m[rng(seed, "val", *key, int(c)).choice(idx, k, replace=False)] = True
-    return m
 
 
 def edge_config(cfg: dict, n_classes: int) -> EdgeConfig:

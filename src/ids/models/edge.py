@@ -19,6 +19,7 @@ import lightgbm as lgb
 import numpy as np
 import xgboost as xgb
 from scipy.optimize import minimize_scalar
+from ids.utils.seed import rng
 
 EPS = 1e-12
 
@@ -223,3 +224,14 @@ def measure_component_latency(model: EdgeEnsemble, X: np.ndarray, threads: int =
         return {k: _time_calls(f, X, idx, b) for k, f in fns.items()}
     finally:
         model.set_threads(None)
+
+
+def val_split(y: np.ndarray, frac: float, seed: int, key) -> np.ndarray:
+    """Stratified boolean validation mask (>=1 row per class with >=2 rows)."""
+    m = np.zeros(len(y), bool)
+    for c in np.unique(y):
+        idx = np.flatnonzero(y == c)
+        k = min(max(int(round(frac * len(idx))), 1), len(idx) - 1) if len(idx) >= 2 else 0
+        if k:
+            m[rng(seed, "val", *key, int(c)).choice(idx, k, replace=False)] = True
+    return m
