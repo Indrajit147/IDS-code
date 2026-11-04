@@ -64,8 +64,8 @@ profiling:                         # Zenodo benign device captures (real device 
   background: ["Active", "ActiveBroker", "Idle"]   # network-wide: spread over all clients
 
 dpub:                              # D2: public calibration set for DA-FedDistill (inputs only)
-  benign: 5000
-  per_category: 3000               # split over the category's classes by size
+  benign: 5000                     # small fixed benign subset
+  attack_frac: 0.01                # proposal: "1-2% from each category"; low end keeps D_pub small
   min_per_class: 50
   max_class_frac: 0.05             # never take more than 5% of a class
   window_mode: cumulative          # at window t use only classes introduced <= t

@@ -48,11 +48,11 @@ def test_device_group():
 
 def test_dpub_caps():
     y = np.array([0] * 1000 + [1] * 100000 + [5] * 40)
-    cfg_d = {"benign": 500, "per_category": 3000, "min_per_class": 50, "max_class_frac": 0.05}
+    cfg_d = {"benign": 500, "attack_frac": 0.01, "min_per_class": 50, "max_class_frac": 0.05}
     pos = select_dpub(y, cfg_d, seed=0)
     counts = np.bincount(y[pos], minlength=19)
     assert counts[0] == 50            # 500 requested, capped at 5% of 1000
-    assert counts[1] == 3000          # only DDoS class present in its category gets it all
+    assert counts[1] == 1000          # 1% of a large attack class
     assert counts[5] == 2             # min 50 requested, capped at 5% of 40
 
 
@@ -74,7 +74,7 @@ def _toy(seed=0, per_class=400):
 @pytest.fixture(scope="module")
 def built():
     cfg = load_config(env="local", overrides={"federation": {"n_clients": 5},
-                                              "dpub": {"benign": 40, "per_category": 60}})
+                                              "dpub": {"benign": 40, "attack_frac": 0.1}})
     csv, prof, ble = _toy()
     return cfg, csv, build_partition(cfg, "category_intro", csv, prof, ble, "toy")
 

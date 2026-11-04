@@ -48,19 +48,14 @@ def device_group(device_scenario: str) -> str:
 
 
 def select_dpub(y19: np.ndarray, cfg_dpub: dict, seed: int) -> np.ndarray:
-    """Positions (into y19) of the public calibration set, stratified by class."""
+    """Positions (into y19) of the public calibration set (proposal, D2): a small fixed
+    benign subset plus `attack_frac` of every attack class, so each category contributes
+    that share. Rare classes get `min_per_class`; no class gives up more than `max_class_frac`."""
     sizes = np.bincount(y19, minlength=len(ATTACKS19))
-    target = np.zeros(len(ATTACKS19), np.int64)
-    for cat in CATEGORIES:
-        members = [i for i, a in enumerate(ATTACKS19) if attack_category(a) == cat and sizes[i] > 0]
-        if not members:
-            continue
-        total = cfg_dpub["benign"] if cat == "benign" else cfg_dpub["per_category"]
-        cnt = proportional_counts(total, sizes[members])
-        for i, c in zip(members, cnt):
-            target[i] = max(int(c), cfg_dpub["min_per_class"])
-    cap = np.floor(sizes * cfg_dpub["max_class_frac"]).astype(np.int64)
-    target = np.minimum(target, cap)
+    target = np.round(sizes * cfg_dpub["attack_frac"]).astype(np.int64)
+    target[ATTACKS19.index("Benign")] = cfg_dpub["benign"]
+    target = np.where(sizes > 0, np.maximum(target, cfg_dpub["min_per_class"]), 0)
+    target = np.minimum(target, np.floor(sizes * cfg_dpub["max_class_frac"]).astype(np.int64))
     picks = [rng(seed, "dpub", c).choice(np.flatnonzero(y19 == c), target[c], replace=False)
              for c in range(len(ATTACKS19)) if target[c] > 0]
     return np.sort(np.concatenate(picks))
