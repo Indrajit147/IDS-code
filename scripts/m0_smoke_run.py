@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 
+from ids.data.io import processed_dir
 from ids.utils import Run, data_path, load_config, set_global_seed
 
 
@@ -20,8 +21,9 @@ def main() -> None:
 
     with Run(cfg, "m0_smoke") as run:
         checks = {}
-        for key in ("raw_csv", "zenodo_dir"):
-            p = data_path(cfg, key)
+        # Later milestones read only `processed`; the raw inputs are needed locally for M1.
+        for key, p in (("raw_csv", data_path(cfg, "raw_csv")), ("zenodo_dir", data_path(cfg, "zenodo_dir")),
+                       ("processed", processed_dir(cfg) / "data_manifest.json")):
             checks[key] = {"path": str(p), "exists": p.exists(),
                            "bytes": p.stat().st_size if p.is_file() else None}
         run.save_json("data_check.json", checks)
