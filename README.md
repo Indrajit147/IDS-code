@@ -27,6 +27,8 @@ python scripts/m2_build_partitions.py    # data/splits/, reports/m2/
 python scripts/m3_baselines.py --pool dev        # E1 + static + BLE; reports/m3/dev/
 python scripts/m3_shortcut_checks.py --pool dev  # IAT, Number/Weight, profiling-row checks
 python scripts/m4_evaluate.py --pool dev         # regression check + standard report; reports/m4/dev/
+python scripts/m5_drift.py --pool dev             # ADWIN, shift, gate; reports/m5/dev/
+python scripts/m6_incremental.py --pool dev --set resources.n_jobs=4   # reports/m6/dev/; --resume continues after a stop
 ```
 
 On Kaggle, open `notebooks/kaggle_bootstrap.ipynb`. It clones this repo, installs it with `--no-deps`, and auto-discovers the attached data under `/kaggle/input`. The environment is detected automatically and can be forced with `IDS_ENV=local|kaggle`. The Kaggle dataset needs only the five files of `data/processed/`: `data_manifest.json`, `wifi_mqtt_full.parquet`, `wifi_mqtt_dev.parquet`, `wifi_profiling.parquet` and `ble.parquet`.
@@ -55,7 +57,7 @@ Rules:
 | M3  | Edge ensemble + centralized/static baselines       | Edge model, E1, static baseline | ✅ Done (dev + full) | 2026-11-04 |
 | M4  | Evaluation harness & metrics                       | Evaluation metrics            | ✅ Done (dev + full) | 2026-11-04 |
 | M5  | Drift detection & uncertainty gate                 | ADWIN, PSI/KL/W, gate τc/τd   | ✅ Done (dev + full), acceptance partly met | 2026-11-04 |
-| M6  | Incremental local learning + rehearsal buffer      | DA-FedDistill step 1          | ⬜ Not started | — |
+| M6  | Incremental local learning + rehearsal buffer      | DA-FedDistill step 1          | ✅ Done (dev), full pool pending | 2026-11-04 |
 | M7  | DA-FedDistill (federated distillation)             | E3, novelty claim B           | ⬜ Not started | — |
 | M8  | Neural FL baselines (FedAvg / FedProx MLP)         | E2, baselines                 | ⬜ Not started | — |
 | M9  | Drift-triggered updates + feature selection        | E4                            | ⬜ Not started | — |
@@ -237,15 +239,15 @@ IDS-code/
 ├── src/ids/
 │   ├── data/          # schema (labels), ingest, sample, external, io
 │   ├── partition/     # timeline, allocate, build (clients, D_pub, BLE), io
-│   ├── models/        # edge (XGB + LGBM, fusion, calibration, save/load, latency); later mlp
+│   ├── models/        # edge (XGB + LGBM, fusion, calibration, save/load, latency), incremental; later mlp
 │   ├── eval/          # metrics, drift_metrics, system, harness, plots
-│   ├── drift/         # (planned) adwin, psi/kl/wasserstein, gate
-│   ├── fl/            # (planned) rehearsal, da_feddistill, fedavg, fedprox, fed_gbdt
+│   ├── drift/         # adwin, shift (psi/kl/wasserstein), gate
+│   ├── fl/            # rehearsal; (planned) da_feddistill, fedavg, fedprox, fed_gbdt
 │   ├── xai/           # (planned) shap local/global, store
 │   ├── llm/           # (planned) backend, prompts, schema, verifier, policy agent
 │   └── utils/         # seed, jsonl, config, run
 ├── scripts/                      # CLI entry points per milestone
-├── notebooks/                    # kaggle_bootstrap, m3_kaggle (M3 to M5); later Notebook A (train/FL) and B (inference/LLM/XAI)
+├── notebooks/                    # kaggle_bootstrap, m3_kaggle (M3 to M5), m6_kaggle; later Notebook A (train/FL) and B (inference/LLM/XAI)
 ├── tests/
 ├── reports/m<k>/                 # tracked milestone reports (EDA, figures, manifests)
 └── results/runs/<run_id>/        # untracked: config snapshot, metrics, logs, models
@@ -460,11 +462,35 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 
 ### M6: Incremental local learning + rehearsal buffer
 **Goal:** client-side continual learning, before any federation.
-- [ ] Incremental update: XGBoost continued boosting (`xgb_model=`) and LightGBM `init_model` (refit); compare with retraining from scratch
-- [ ] Bounded rehearsal buffer (reservoir or class-balanced) with a configurable size
-- [ ] Local-only baseline (no collaboration) under the timeline
-- [ ] Naïve incremental baseline (no collaboration, no rehearsal), which H1 compares against
+- [x] Incremental update: XGBoost continued boosting (`xgb_model=`) and LightGBM `init_model`; compared with retraining from scratch (`models/incremental.py`)
+- [x] Bounded rehearsal buffer, class-balanced, with a configurable size (`fl/rehearsal.py`)
+- [x] Local-only baseline (no collaboration) under the timeline
+- [x] Naïve incremental baseline (no collaboration, no rehearsal), which H1 compares against
+- [ ] Full-pool run: `notebooks/m6_kaggle.ipynb` is ready but has not been run
 - **Acceptance:** forgetting with rehearsal is below forgetting without it; the buffer stays within its memory budget.
+
+**Results, dev pool (2026-11-04)**: [`reports/m6/dev/INCREMENTAL.md`](reports/m6/dev/INCREMENTAL.md), [`reports/m6/dev/SEEDS.md`](reports/m6/dev/SEEDS.md)
+- Run: `python scripts/m6_incremental.py --pool dev --set resources.n_jobs=4` (15 min, 1.0 GB peak), repeated with seeds 43 and 44. The partition is the same in all three. Mean ± standard deviation, CSV rows only:
+
+  | method | window avg | avg excl. t0 | final (t5) | class forgetting | fit time, seed 42 | model size at t5, seed 42 |
+  |---|---:|---:|---:|---:|---:|---:|
+  | Naïve incremental | 0.9123 ± 0.0004 | 0.8951 | 0.8818 | 0.0353 ± 0.0021 | 86 s | 9.0 MB |
+  | Local + rehearsal (500) | 0.9121 ± 0.0005 | 0.8949 | 0.8815 | 0.0323 ± 0.0009 | 103 s | 9.9 MB |
+  | **Local + rehearsal (2,000)** | 0.9119 ± 0.0006 | 0.8946 | 0.8820 | **0.0275 ± 0.0005** | 127 s | 10.5 MB |
+  | Local + rehearsal (8,000) | 0.9121 ± 0.0007 | 0.8949 | 0.8799 | 0.0219 ± 0.0011 | 152 s | 11.4 MB |
+  | Retrain per client | 0.9127 ± 0.0005 | 0.8958 | 0.8802 | 0.0224 ± 0.0004 | 225 s | 4.0 MB |
+  | E1 centralized (M3, one seed) | 0.8844 | 0.8612 | 0.8632 | 0.0370 | | |
+  | Static centralized (M3, one seed) | 0.3460 | 0.2152 | 0.0779 | n/a | | |
+
+- **Acceptance met on the dev pool.** At 2,000 and 8,000 rows, forgetting is below naïve in all three seeds. At 500 rows it is not reliable: the seed 42 difference is +0.0001. The buffer never exceeded its limit (2,000 rows, 360 kB on the largest client).
+- **Rehearsal lowers forgetting but does not raise macro-F1.** All five methods sit within 0.001 of each other on window average, which is about the seed noise. Old classes recur with fresh rows in every later window of this timeline, so a client without a buffer keeps seeing them. Expect the M14 "remove rehearsal" ablation to show little on this timeline.
+- **Incremental matches retraining on macro-F1 at 38% of the fit time** (naïve vs retrain), but models keep growing and are 2.2× larger by t5.
+- **Local models beat centralized E1 by 0.028, and this is not like for like.** Nearly all of the gain is DDoS and DoS: at t5, DDoS F1 is 0.89 vs 0.85 and DoS 0.73 vs 0.63 (seed 42, retrain vs E1). These two are hard to separate from features, so a client model can lean on its own label mix. That explanation is likely but untested. It matters for M7: E3 must beat local-only, which starts from this advantage.
+
+**Choices the proposal leaves open (additions):**
+- LightGBM continues boosting through `init_model` instead of the `refit` this plan first named, since `refit` can't add a class.
+- Stock LightGBM can't learn a class absent from its first fit, and the ensemble hides the failure. LightGBM therefore trains with softmax gradients and a floored Hessian, and `max_delta_step` = 10 bounds leaf outputs. A regression test checks each booster alone.
+- At most 50 rounds for a first fit and 50 per update, and a 2,000-row buffer per client. These budgets are assumptions. Retraining keeps M3's limit of 300 rounds.
 
 ### M7: DA-FedDistill (proposed federated distillation)
 **Goal:** the core FL contribution (E3).
@@ -556,3 +582,4 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 | 2026-11-04 | Data check, full pool | CSV provenance settled: merged by the author from the CICIoMT2024 CSVs, and it matches the Zenodo copy row for row on all features and labels. First Kaggle run came back (M3, 75 min) but predates the D_pub change, so its results are stored as provisional: E1 0.891 and static 0.414 window-average. Scored through M4: regression check passed; removing profiling rows costs 0.002 window-average macro-F1 and 0.03 t5 benign F1 on the full pool. Final Kaggle rerun pending. |
 | 2026-11-04 | M5 ✅ (dev) | ADWIN (matches `river` on 40 synthetic streams), PSI/KL/Wasserstein per client, gate tuned on validation rows, drift registry. No false alarms in 93k shuffled rows; error rate caught at t1–t4. Main finding: the old model at t1 is confidently wrong and escalates nothing, while PSI sees the shift (new open decision D8). D7 decided: `csv_only` is the headline. Acceptance partly met; the Kaggle notebook now runs M3 to M5 in one go. |
 | 2026-11-04 | M3–M5 full pool | Final Kaggle run at `72001d4` (M3 51 min, M4 6 min, M5 7 min) replaces the provisional results. Headline, CSV rows only: E1 0.890 window-average and 0.867 at t5; static 0.402 and 0.184. M5: error-rate ADWIN catches all 33 affected clients with no false alarms in 1.45M rows; the gate is still blind at t1 (D8); PSI is weak after t1; the 10% budget catches 24% of errors. |
+| 2026-11-04 | M6 ✅ (dev) | Per-client continued boosting with a class-balanced buffer, over 3 seeds. Forgetting 0.035 naïve, 0.028 with 2,000 rows, 0.022 with 8,000; the buffer stays within budget, so acceptance is met on dev. Macro-F1 does not move (all 0.912–0.913), because old classes recur in this timeline. Local models beat E1 (0.884), mostly on DDoS/DoS, which is likely a client label-mix effect. Full-pool notebook ready, not yet run. 56 tests pass. |
