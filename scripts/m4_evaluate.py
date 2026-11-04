@@ -1,0 +1,224 @@
+"""M4: evaluate saved M3 models through the shared harness.
+
+Reloads every model of an M3 run, regenerates its results and checks them against the numbers M3
+logged (the milestone's acceptance test), then writes the standard report to reports/m4/<pool>/.
+
+Usage: python scripts/m4_evaluate.py [--pool dev|full] [--run <m3 run dir>] [--env ...]
+"""
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+from ids.data.io import ble_features, model_features
+from ids.data.schema import CATEGORIES
+from ids.eval.harness import Evaluator, client_clusters, load_ble_test_sets, load_test_sets, predict_global
+from ids.eval.plots import fig_confusions, fig_curves, fig_matrix, fig_per_class
+from ids.eval.system import fl_round_bytes, tree_cost
+from ids.models.edge import EdgeEnsemble, measure_component_latency
+from ids.partition.io import partition_dir
+from ids.utils import Run, load_config, set_global_seed
+from ids.utils.config import REPO_ROOT, results_root
+from ids.utils.jsonl import dumps
+
+COMPARED = ["n", "accuracy", "macro_f1", "weighted_f1", "ece", "auroc_attack_vs_benign"]
+TOLERANCE = 1e-9
+
+
+def find_run(cfg: dict, pool: str, run: str | None) -> Path:
+    if run:
+        return Path(run)
+    runs = sorted(results_root(cfg).glob(f"*_m3_baselines_{pool}"))
+    if not runs:
+        sys.exit(f"no m3_baselines_{pool} run under {results_root(cfg)}; run scripts/m3_baselines.py first")
+    return runs[-1]
+
+
+def check_against_m3(logged: pd.DataFrame, regenerated: pd.DataFrame) -> dict:
+    """Largest absolute difference per metric; raises if any exceeds TOLERANCE."""
+    keys = ["model", "train_through", "eval_window", "variant"]
+    both = logged.merge(regenerated, on=keys, suffixes=("_m3", "_m4"), validate="one_to_one")
+    if len(both) != len(logged) or len(both) != len(regenerated):
+        raise RuntimeError(f"rows differ: m3 {len(logged)}, harness {len(regenerated)}, matched {len(both)}")
+    diffs = {m: float(np.nanmax(np.abs(both[f"{m}_m3"] - both[f"{m}_m4"]))) for m in COMPARED}
+    bad = {m: d for m, d in diffs.items() if d > TOLERANCE}
+    if bad:
+        raise RuntimeError(f"harness disagrees with logged M3 numbers: {bad}")
+    return {"rows_compared": len(both), "tolerance": TOLERANCE, "max_abs_diff": diffs}
+
+
+def fmt_recover(k) -> str:
+    return "never" if k is None else str(k)
+
+
+def write_report(rep, ctx) -> None:
+    s, windows, cost, lat = ctx["summaries"], ctx["windows"], ctx["cost"], ctx["latency"]
+    head = "| method | slice | window avg | avg excl. t0 | final (t5) | drop from peak | class forgetting | drops | recovered | never |\n|---|---|---:|---:|---:|---:|---:|---:|---:|---:|\n"
+    rows = ""
+    for v in s:
+        fg = v["mean_forgetting_by_class"]
+        r = v["recovery"]
+        rows += (f"| {v['method']} | {v['slice']} | {v['window_avg_macro_f1']:.4f} | {v['window_avg_macro_f1_excl_t0']:.4f} | "
+                 f"{v['final_macro_f1']:.4f} | {v['drop_from_own_peak']:.4f} | {'n/a' if fg is None else f'{fg:.4f}'} | "
+                 f"{r['n_drops']} | {r['n_recovered']} | {r['n_never']} |\n")
+    win = "| method | slice | " + " | ".join(windows) + " |\n|---|---|" + "---:|" * len(windows) + "\n"
+    for v in s:
+        win += f"| {v['method']} | {v['slice']} | " + " | ".join(f"{v['macro_f1_by_window'][i]:.4f}" for i in range(len(windows))) + " |\n"
+    ttr = "| method | slice | window | pre-drift | model before update | windows to recover |\n|---|---|---|---:|---:|---:|\n"
+    for v in s:
+        for d, x in v["time_to_recover"].items():
+            ttr += f"| {v['method']} | {v['slice']} | {windows[d]} | {x['pre']:.4f} | {x['cold']:.4f} | {fmt_recover(x['recovered_after'])} |\n"
+    cl = "| cluster | clients | " + " | ".join(windows) + " |\n|---|---|" + "---:|" * len(windows) + "\n"
+    for k, members in ctx["cluster_members"].items():
+        vals = ctx["cluster_series"][k]
+        cl += f"| {k} | {', '.join(f'c{c:02d}' for c in members)} | " + " | ".join(f"{vals[i]:.4f}" for i in range(len(windows))) + " |\n"
+    auc = "| window | accuracy | macro-F1 | AUROC (attack vs benign) | macro one-vs-rest AUC | ECE |\n|---|---:|---:|---:|---:|---:|\n"
+    for r in ctx["e1_rows"].itertuples():
+        auc += f"| {windows[r.eval_window]} | {r.accuracy:.4f} | {r.macro_f1:.4f} | {r.auroc_attack_vs_benign:.4f} | {r.macro_auc_ovr:.4f} | {r.ece:.4f} |\n"
+    latc = "| model | component | single-flow P50 (ms) | P95 (ms) | batched (µs/flow) |\n|---|---|---:|---:|---:|\n"
+    for t, comps in lat.items():
+        for name, v in comps.items():
+            latc += f"| through {t} | {name} | {v['single_ms_p50']:.2f} | {v['single_ms_p95']:.2f} | {v['batch_us_per_row']:.2f} |\n"
+    costs = "| model | XGB trees | LGBM trees | max comparisons per flow | size (MB) | training time (s) |\n|---|---:|---:|---:|---:|---:|\n"
+    for t, c in cost.items():
+        costs += f"| through {t} | {c['xgb_trees']:,} | {c['lgb_trees']:,} | {c['max_comparisons_per_flow']:,} | {c['size_mb']:.1f} | {c['fit_seconds']:.1f} |\n"
+    fl = ctx["fl_round"]
+    chk = ctx["check"]
+    md = f"""# M4 evaluation: E1 and static through the shared harness (`{ctx['pool']}` pool)
+
+Run `{ctx['run']}`, models from `{ctx['m3_run']}`. Generated by `scripts/m4_evaluate.py`.
+
+**Regression check against the logged M3 numbers: passed.** {chk['rows_compared']} rows compared; largest macro-F1 difference {chk['max_abs_diff']['macro_f1']:.1e}, largest ECE difference {chk['max_abs_diff']['ece']:.1e} (tolerance {chk['tolerance']:.0e}).
+
+Slices: `all` is every test row. `csv_only` drops the Zenodo benign profiling rows, which can be told apart from the CSV's benign rows and are always classified correctly, so it is the fairer view of benign false positives.
+
+## Summary
+
+{head}{rows}
+Class forgetting is F_max − F_final per class on the test set of the window that introduced it, averaged over classes. A static model has one trained state, so it has no forgetting history. A *drop* is a window where the model before its update falls more than ε = {ctx['eps']} below its pre-drift score.
+
+## Macro-F1 per window
+
+{win}
+![curves](macro_f1_by_window.png)
+
+![matrix](macro_f1_matrix.png)
+
+## Time to recover
+
+{ttr}
+## Detection metrics of E1 per window (all rows)
+
+{auc}
+![per class](per_class_f1.png)
+
+## Client clusters
+
+Clients are grouped by training label mix (Ward linkage on 19-class shares across all windows). Macro-F1 of E1 at each window, by cluster:
+
+{cl}
+![clusters](confusion_by_cluster.png)
+
+Confusion matrices for every (model, window, slice) are in `confusions.csv`.
+
+## System cost
+
+Latency on one thread, on this machine, with Python call overhead included in the single-flow figures:
+
+{latc}
+{costs}
+Projected federated cost: sharing float32 soft labels on the whole D_pub ({fl['n_dpub']:,} rows, {len(ctx['names'])} classes) costs **{fl['per_client_bytes'] / 1e6:.2f} MB per client** and **{fl['per_round_bytes'] / 1e6:.1f} MB per round** over {ctx['n_clients']} clients, before any compression. M7 will measure the real figure. LLM cost and payload size are recorded from M11 onward.
+"""
+    (rep / "EVALUATION.md").write_text(md, encoding="utf-8")
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--env", default=None)
+    ap.add_argument("--pool", default=None, help="dev | full (default from resources.use_dev_sample)")
+    ap.add_argument("--run", default=None, help="M3 run directory (default: latest for the pool)")
+    ap.add_argument("--set", nargs="*", default=[], metavar="KEY=VALUE")
+    args = ap.parse_args()
+    cfg = load_config(env=args.env, overrides=args.set)
+    set_global_seed(cfg["seed"])
+    pool = args.pool or ("dev" if cfg["resources"]["use_dev_sample"] else "full")
+    tl, windows = cfg["timeline"]["headline"], cfg["timeline"]["windows"]
+    target, names, feats = cfg["labels"]["headline_target"], CATEGORIES, model_features(cfg)
+    m3_run = find_run(cfg, pool, args.run)
+    n_jobs, ec = cfg["resources"]["n_jobs"], cfg["eval"]
+    last = len(windows) - 1
+
+    with Run(cfg, f"m4_evaluate_{pool}") as run:
+        log = run.logger
+        log.info("models from %s", m3_run)
+        clusters = client_clusters(cfg, pool, tl, ec["n_client_clusters"])
+        ev = Evaluator(load_test_sets(cfg, pool, tl, target, feats), names, clusters)
+        models = {t: EdgeEnsemble.load(m3_run / "models" / "wifi" / f"t{t}", n_jobs=n_jobs) for t in range(len(windows))}
+        for t, m in models.items():
+            ev.evaluate("wifi", t, predict_global(m))
+            log.info("evaluated model through %s", windows[t])
+        ev.alias("static", "wifi", 0)
+
+        # BLE is logged by M3 too, so it is part of the regression check.
+        w0 = windows.index(cfg["ble"]["start_window"])
+        ble = Evaluator(load_ble_test_sets(cfg, pool, tl, ble_features(cfg), w0), ["benign", "BLE-DoS"])
+        for t in range(w0, len(windows)):
+            ble.evaluate("ble", t, predict_global(EdgeEnsemble.load(m3_run / "models" / "ble" / f"t{t}", n_jobs=n_jobs)))
+
+        logged = pd.read_json(m3_run / "results.jsonl", lines=True)
+        regen = pd.concat([ev.frame("all").query("model == 'wifi'"), ble.frame("all")], ignore_index=True)
+        check = check_against_m3(logged, regen)
+        log.info("regression check passed: %s", check)
+
+        # The whole-window view of E1 keeps its M3 name in the logs; reports call it E1.
+        for r in ev.records:
+            if r["model"] == "wifi":
+                r["model"] = "E1"
+        ev.confusions = {("E1" if k[0] == "wifi" else k[0], *k[1:]): v for k, v in ev.confusions.items()}
+
+        summaries = [ev.summary(m, s, eps=ec["recover_eps"]) for m in ("E1", "static") for s in ("all", "csv_only")]
+        run.save_json("summary.json", summaries)
+
+        latency, cost = {}, {}
+        Xlat = ev.test_sets[last].X
+        for t in (0, last):
+            m, d = models[t], m3_run / "models" / "wifi" / f"t{t}"
+            latency[windows[t]] = measure_component_latency(m, Xlat, threads=ec["latency_threads"], seed=cfg["seed"])
+            cost[windows[t]] = {**tree_cost(m, cfg["models"]["xgb"]["max_depth"], cfg["models"]["lgb"]["max_depth"]),
+                                "size_mb": ((d / "xgb.json").stat().st_size + (d / "lgb.txt").stat().st_size) / 1e6,
+                                "fit_seconds": m.fit_info_["fit_seconds_xgb"] + m.fit_info_["fit_seconds_lgb"]}
+        n_dpub = len(pd.read_parquet(partition_dir(cfg, pool, tl) / "dpub.parquet", columns=["row_id"]))
+        n_clients = cfg["federation"]["n_clients"]
+        fl_round = {"n_dpub": n_dpub, **fl_round_bytes(n_dpub, len(names), n_clients)}
+
+        rep = REPO_ROOT / "reports" / "m4" / pool
+        rep.mkdir(parents=True, exist_ok=True)
+        ev.long_table().to_csv(rep / "results.csv", index=False)
+        ev.per_class_table().to_csv(rep / "per_class.csv", index=False)
+        ev.confusion_table().to_csv(rep / "confusions.csv", index=False)
+        (rep / "summary.json").write_text(dumps({"summaries": summaries, "regression_check": check, "latency": latency,
+                                                 "cost": cost, "fl_round": fl_round, "clusters": clusters}, indent=2), encoding="utf-8")
+
+        series = {(f"{m}, {lab}", (slot, dash)): pd.Series(next(v for v in summaries if v["method"] == m and v["slice"] == s)["macro_f1_by_window"])
+                  for m, slot in (("E1", 0), ("static", 1)) for s, lab, dash in (("all", "all rows", False), ("csv_only", "CSV rows only", True))}
+        fig_curves(series, windows, rep / "macro_f1_by_window.png", "Macro-F1 per window, with and without profiling rows")
+        fig_matrix(ev.matrix("E1"), windows, rep / "macro_f1_matrix.png", f"Train x eval macro-F1 ({pool} pool)")
+        pc = {r.eval_window: r.per_class_f1 for r in ev.primary("E1", "all").itertuples() if r.train_through == r.eval_window}
+        fig_per_class(pc, names, windows, rep / "per_class_f1.png", "Per-class F1 of E1 (blank = class not present yet)")
+        members = {k: sorted(c for c, v in clusters.items() if v == k) for k in sorted(set(clusters.values()))}
+        fig_confusions([(ev.confusions[("E1", last, last, f"cluster:{k}")], f"Cluster {k}, {windows[last]} (row-norm.)") for k in members],
+                       names, rep / "confusion_by_cluster.png")
+        cluster_series = {k: {w: float(ev.matrix("E1", f"cluster:{k}").loc[w, w]) for w in range(len(windows))} for k in members}
+        write_report(rep, {"pool": pool, "run": run.dir.name, "m3_run": m3_run.name, "summaries": summaries, "windows": windows,
+                           "cost": cost, "latency": latency, "eps": ec["recover_eps"], "check": check, "names": names,
+                           "cluster_members": members, "cluster_series": cluster_series, "fl_round": fl_round, "n_clients": n_clients,
+                           "e1_rows": ev.primary("E1", "all").query("train_through == eval_window")})
+        log.info("report -> %s", rep)
+
+
+if __name__ == "__main__":
+    main()

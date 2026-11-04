@@ -11,16 +11,13 @@ from __future__ import annotations
 import argparse
 import time
 
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from matplotlib.colors import LinearSegmentedColormap
 
 from ids.data.io import ble_features, model_features
 from ids.data.schema import ATTACKS19, CATEGORIES
-from ids.eval.metrics import confusion, detection_metrics
+from ids.eval.harness import Evaluator, load_ble_test_sets, load_test_sets, predict_global
+from ids.eval.plots import fig_confusions, fig_curves, fig_matrix
 from ids.models.edge import EdgeConfig, EdgeEnsemble, measure_latency
 from ids.partition.io import load_ble_rows, load_rows
 from ids.utils import Run, load_config, set_global_seed
@@ -29,16 +26,6 @@ from ids.utils.jsonl import dumps
 from ids.utils.seed import rng
 
 CLASS_NAMES = {"y_category": CATEGORIES, "y_attack19": ATTACKS19, "y_binary": ["benign", "attack"]}
-SURFACE, INK, INK2, GRID = "#fcfcfb", "#0b0b0b", "#52514e", "#e4e3df"
-BLUE, ORANGE = "#2a78d6", "#eb6834"
-SEQ = LinearSegmentedColormap.from_list("seq", ["#f0efec", "#cde2fb", "#86b6ef", "#3987e5",
-                                                "#256abf", "#184f95", "#0d366b"])
-plt.rcParams.update({
-    "figure.facecolor": SURFACE, "axes.facecolor": SURFACE, "savefig.facecolor": SURFACE,
-    "axes.edgecolor": GRID, "axes.labelcolor": INK2, "xtick.color": INK2, "ytick.color": INK2,
-    "text.color": INK, "axes.titlesize": 11, "axes.titleweight": "bold", "font.size": 8,
-    "axes.spines.top": False, "axes.spines.right": False,
-})
 
 
 def val_split(y: np.ndarray, frac: float, seed: int, key) -> np.ndarray:
@@ -59,9 +46,9 @@ def edge_config(cfg: dict, n_classes: int) -> EdgeConfig:
                       n_jobs=cfg["resources"]["n_jobs"], seed=cfg["seed"])
 
 
-def run_matrix(cfg, run, train_fn, test_sets, train_windows, n_classes, names, tag):
-    """Train at each t in train_windows; evaluate every component on every test window."""
-    records, conf_mats, models = [], {}, {}
+def run_matrix(cfg, run, train_fn, evaluator, train_windows, n_classes, tag):
+    """Train at each t in train_windows; the evaluator scores every component on every test window."""
+    models = {}
     for t in train_windows:
         X, y = train_fn(t)
         vm = val_split(y, cfg["models"]["val_frac"], cfg["seed"], (tag, t))
@@ -72,75 +59,9 @@ def run_matrix(cfg, run, train_fn, test_sets, train_windows, n_classes, names, t
                         tag, t, f"{len(y):,}", time.perf_counter() - t0, m.w_xgb_, m.T_,
                         m.fit_info_["xgb_best_iteration"], m.fit_info_["lgb_best_iteration"])
         models[t] = m
-        for w, (Xt, yt) in test_sets.items():
-            comps = m.predict_components(Xt)
-            for variant, p in comps.items():
-                met = detection_metrics(yt, p, names)
-                records.append({"model": tag, "train_through": t, "eval_window": w, "variant": variant,
-                                **{k: v for k, v in met.items() if k != "per_class"},
-                                "per_class_f1": {c: d["f1"] for c, d in met["per_class"].items()},
-                                **({"fit": m.fit_info_, **sizes} if variant == "calibrated" else {})})
-            conf_mats[(t, w)] = confusion(yt, comps["calibrated"], n_classes)
+        evaluator.evaluate(tag, t, predict_global(m), extra={"fit": m.fit_info_, **sizes})
         del X, y
-    return pd.DataFrame(records), conf_mats, models
-
-
-# ------------------------------------------------------------------ figures
-def fig_matrix(df, windows, path, title):
-    d = df[df.variant == "calibrated"].pivot(index="train_through", columns="eval_window", values="macro_f1")
-    fig, ax = plt.subplots(figsize=(6.2, 4.4))
-    im = ax.imshow(d.values, cmap=SEQ, vmin=0, vmax=1)
-    for i in range(d.shape[0]):
-        for j in range(d.shape[1]):
-            v = d.values[i, j]
-            ax.text(j, i, f"{v:.2f}", ha="center", va="center", fontsize=8,
-                    color=SURFACE if v > 0.6 else INK)
-    ax.set_xticks(range(d.shape[1]), [windows[w] for w in d.columns])
-    ax.set_yticks(range(d.shape[0]), [f"through {windows[t]}" for t in d.index])
-    ax.set_xlabel("evaluated on test set of window"); ax.set_title(title, loc="left")
-    for s in ax.spines.values():
-        s.set_visible(False)
-    cb = fig.colorbar(im, ax=ax, fraction=0.04, pad=0.02); cb.set_label("macro-F1", color=INK2); cb.outline.set_visible(False)
-    fig.tight_layout(); fig.savefig(path, dpi=150); plt.close(fig)
-
-
-def fig_static_vs_central(df, windows, path):
-    c = df[df.variant == "calibrated"]
-    central = c[c.train_through == c.eval_window].set_index("eval_window")["macro_f1"]
-    static = c[c.train_through == 0].set_index("eval_window")["macro_f1"]
-    x = np.arange(len(windows))
-    fig, ax = plt.subplots(figsize=(7, 3.4))
-    for s, color, label in ((central, BLUE, "Centralized, retrained each window (E1)"),
-                            (static, ORANGE, "Static, trained on t0 only")):
-        ax.plot(x, s.reindex(x).values, color=color, lw=2, marker="o", ms=8,
-                markeredgecolor=SURFACE, markeredgewidth=2, label=label)
-        ax.annotate(f"{s.iloc[-1]:.2f}", (x[-1], s.iloc[-1]), xytext=(8, 0), textcoords="offset points",
-                    va="center", color=INK2)
-    ax.set_xticks(x, windows); ax.set_ylim(0, 1.05); ax.set_ylabel("macro-F1 on that window's test set")
-    ax.grid(axis="y", color=GRID, lw=0.6); ax.set_axisbelow(True)
-    ax.legend(frameon=False, loc="lower left")
-    ax.set_title("Drift degradation without updates vs. per-window retraining", loc="left")
-    fig.tight_layout(); fig.savefig(path, dpi=150); plt.close(fig)
-
-
-def fig_confusions(conf_mats, last, names, path):
-    fig, axes = plt.subplots(1, 2, figsize=(10, 4.2))
-    for ax, (t, title) in zip(axes, ((0, "Static t0 model"), (last, "Centralized"))):
-        cm = conf_mats[(t, last)].astype(float)
-        norm = cm / np.clip(cm.sum(1, keepdims=True), 1, None)
-        ax.imshow(norm, cmap=SEQ, vmin=0, vmax=1)
-        for i in range(len(names)):
-            for j in range(len(names)):
-                if cm[i].sum() and norm[i, j] >= 0.01:
-                    ax.text(j, i, f"{norm[i, j]:.2f}", ha="center", va="center", fontsize=7,
-                            color=SURFACE if norm[i, j] > 0.6 else INK)
-        ax.set_xticks(range(len(names)), names, rotation=45, ha="right")
-        ax.set_yticks(range(len(names)), names)
-        ax.set_xlabel("predicted"); ax.set_ylabel("true")
-        ax.set_title(f"{title}, last window (row-norm.)", loc="left")
-        for s in ax.spines.values():
-            s.set_visible(False)
-    fig.tight_layout(); fig.savefig(path, dpi=150); plt.close(fig)
+    return evaluator.frame("all").drop(columns=["slice", "per_class", "macro_auc_ovr"]), models
 
 
 def main() -> None:
@@ -164,22 +85,19 @@ def main() -> None:
         log = run.logger
         log.info("pool=%s target=%s timeline=%s features=%d", pool, target, tl, len(feats))
 
-        test_sets = {}
-        for w in range(len(windows)):
-            d = load_rows(cfg, pool, tl, windows=[w], split="test", features=feats)
-            test_sets[w] = (d[feats].to_numpy(np.float32), d[target].to_numpy())
-        log.info("test rows per window: %s", {windows[w]: len(v[1]) for w, v in test_sets.items()})
+        test_sets = load_test_sets(cfg, pool, tl, target, feats)
+        log.info("test rows per window: %s", {windows[w]: len(v.y) for w, v in test_sets.items()})
+        evaluator = Evaluator(test_sets, names)
 
         def wifi_train(t):
             d = load_rows(cfg, pool, tl, windows=list(range(t + 1)), split="train", features=feats)
             return d[feats].to_numpy(np.float32), d[target].to_numpy()
 
-        res, conf_mats, models = run_matrix(cfg, run, wifi_train, test_sets, range(len(windows)),
-                                            len(names), names, "wifi")
+        res, models = run_matrix(cfg, run, wifi_train, evaluator, range(len(windows)), len(names), "wifi")
 
         # ---- latency + size (smallest and largest model)
         lat = {}
-        Xlat = test_sets[len(windows) - 1][0]
+        Xlat = test_sets[len(windows) - 1].X
         for t in (0, len(windows) - 1):
             lat[windows[t]] = measure_latency(models[t], Xlat, seed=cfg["seed"])
             lat[windows[t]].update(res[(res.train_through == t) & (res.variant == "calibrated")]
@@ -189,17 +107,13 @@ def main() -> None:
         # ---- BLE edge model (binary), centralized over BLE windows
         w0 = windows.index(cfg["ble"]["start_window"])
         bfeats = ble_features(cfg)
-        ble_test = {}
-        for w in range(w0, len(windows)):
-            d = load_ble_rows(cfg, pool, tl, windows=[w], split="test")
-            ble_test[w] = (d[bfeats].to_numpy(np.float32), d["y_binary"].to_numpy())
+        ble_eval = Evaluator(load_ble_test_sets(cfg, pool, tl, bfeats, w0), ["benign", "BLE-DoS"])
 
         def ble_train(t):
             d = load_ble_rows(cfg, pool, tl, windows=list(range(w0, t + 1)), split="train")
             return d[bfeats].to_numpy(np.float32), d["y_binary"].to_numpy()
 
-        ble_res, _, ble_models = run_matrix(cfg, run, ble_train, ble_test, range(w0, len(windows)), 2,
-                                            ["benign", "BLE-DoS"], "ble")
+        ble_res, _ = run_matrix(cfg, run, ble_train, ble_eval, range(w0, len(windows)), 2, "ble")
 
         # ---- persist
         allres = pd.concat([res, ble_res], ignore_index=True)
@@ -208,10 +122,16 @@ def main() -> None:
 
         rep = REPO_ROOT / "reports" / "m3" / pool
         rep.mkdir(parents=True, exist_ok=True)
-        fig_matrix(res, windows, rep / "macro_f1_matrix.png",
+        last = len(windows) - 1
+        fig_matrix(evaluator.matrix("wifi"), windows, rep / "macro_f1_matrix.png",
                    f"Centralized ensemble: macro-F1 ({pool} pool)")
-        fig_static_vs_central(res, windows, rep / "static_vs_centralized.png")
-        fig_confusions(conf_mats, len(windows) - 1, names, rep / "confusion_last_window.png")
+        M = evaluator.matrix("wifi")
+        fig_curves({"Centralized, retrained each window (E1)": pd.Series({w: M.loc[w, w] for w in M.columns}),
+                    "Static, trained on t0 only": M.loc[0]}, windows, rep / "static_vs_centralized.png",
+                   "Drift degradation without updates vs. per-window retraining")
+        fig_confusions([(evaluator.confusions[("wifi", 0, last, "all")], "Static t0 model, last window (row-norm.)"),
+                        (evaluator.confusions[("wifi", last, last, "all")], "Centralized, last window (row-norm.)")],
+                       names, rep / "confusion_last_window.png")
         write_report(cfg, res, ble_res, lat, models, pool, target, tl, feats, rep, run.dir.name)
         cols = ["model", "train_through", "eval_window", "variant", "n", "accuracy", "macro_f1",
                 "weighted_f1", "ece", "auroc_attack_vs_benign"]

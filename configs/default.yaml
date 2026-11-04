@@ -96,6 +96,11 @@ models:                            # M3 edge ensemble (edge-friendly limits)
     colsample_bytree: 0.8
     min_child_samples: 20
 
+eval:                              # M4
+  recover_eps: 0.02                # time-to-recover: back within this of pre-drift macro-F1
+  n_client_clusters: 3             # clusters of clients by training label mix
+  latency_threads: 1               # edge latency is reported single-threaded
+
 gate:                              # M5
   tau_conf: 0.80
   tau_disagree: 0.20
