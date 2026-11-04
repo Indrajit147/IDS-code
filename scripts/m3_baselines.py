@@ -9,6 +9,7 @@ Usage: python scripts/m3_baselines.py [--pool dev|full] [--target y_category] [-
 from __future__ import annotations
 
 import argparse
+import os
 import time
 
 import numpy as np
@@ -210,7 +211,7 @@ Each matrix row is one model (trained through window t) and each column is a win
 
 {chr(10).join(lat_lines)}
 
-Measured on this machine's CPU (12 threads) with the full fused + calibrated ensemble. Single-flow latency includes Python call overhead.
+Measured on a machine with {os.cpu_count()} logical CPUs, using all of them, with the full fused + calibrated ensemble. Single-flow latency includes Python call overhead.
 
 ## BLE edge model (binary, separate feature space: {', '.join(ble_features(cfg))})
 
