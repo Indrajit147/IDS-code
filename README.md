@@ -54,7 +54,7 @@ Rules:
 | M2  | Synthetic drift timeline, clients & D_pub          | Time windows, client sim, D_pub | ✅ Done | 2026-11-04 |
 | M3  | Edge ensemble + centralized/static baselines       | Edge model, E1, static baseline | ✅ Done (dev) · full pool provisional, final Kaggle rerun pending | 2026-11-04 |
 | M4  | Evaluation harness & metrics                       | Evaluation metrics            | ✅ Done (dev) · full pool provisional, final Kaggle rerun pending | 2026-11-04 |
-| M5  | Drift detection & uncertainty gate                 | ADWIN, PSI/KL/W, gate τc/τd   | ⬜ Not started | — |
+| M5  | Drift detection & uncertainty gate                 | ADWIN, PSI/KL/W, gate τc/τd   | ✅ Done (dev), acceptance partly met · full pool pending on Kaggle | 2026-11-04 |
 | M6  | Incremental local learning + rehearsal buffer      | DA-FedDistill step 1          | ⬜ Not started | — |
 | M7  | DA-FedDistill (federated distillation)             | E3, novelty claim B           | ⬜ Not started | — |
 | M8  | Neural FL baselines (FedAvg / FedProx MLP)         | E2, baselines                 | ⬜ Not started | — |
@@ -110,7 +110,7 @@ Three loops: the **inference loop** (edge to cloud escalation), the **adaptation
 
 ## Dataset facts (measured from `data/raw/ciciomt2024_full_8p7m.csv`)
 
-Source file: `ciciomt2024_full_8p7m.csv`, SHA-256 `f7cb6fe30c4e4f0cb415a5e888f9bfcc7a652189a094447c72b8428b6b8f0eb6`. It was **merged by the project author from the CICIoMT2024 Wi-Fi/MQTT attack CSV files**, published by the Canadian Institute for Cybersecurity ([dataset page](https://www.unb.ca/cic/datasets/iomt-dataset-2024.html); Dadkhah et al., *Internet of Things* 28, 2024, DOI [10.1016/j.iot.2024.101351](https://doi.org/10.1016/j.iot.2024.101351)).
+Source file: `ciciomt2024_full_8p7m.csv`, SHA-256 `f7cb6fe30c4e4f0cb415a5e888f9bfcc7a652189a094447c72b8428b6b8f0eb6`. It was **merged by the project author from the CICIoMT2024 Wi-Fi/MQTT attack CSV files**, downloaded from the Canadian Institute for Cybersecurity ([dataset page](https://www.unb.ca/cic/datasets/iomt-dataset-2024.html); Dadkhah et al., *Internet of Things* 28, 2024, DOI [10.1016/j.iot.2024.101351](https://doi.org/10.1016/j.iot.2024.101351)).
 
 Cross-check (2026-11-04), against the independent [Zenodo derivative](https://zenodo.org/records/19452870):
 - **Row count:** 8,775,013, the exact number of flow records that record gives for the raw dataset.
@@ -118,7 +118,7 @@ Cross-check (2026-11-04), against the independent [Zenodo derivative](https://ze
 - **Labels:** the 19 CSV labels map one-to-one onto Zenodo's labels, with no disagreement on any row.
 - **Coverage and order:** all 72 source files are represented. The CSV is one block for the official train split (19 classes; 7.16M rows) followed by one for the official test split (19 classes; 1.61M rows).
 
-The official release itself sits behind a registration form and wasn't compared directly, so this shows agreement with a second, independently published copy. The merge also dropped the official train/test split, though it can be recovered from the row order. M2 re-splits at random instead; M14 tests the official split as a sensitivity run.
+The files from CIC weren't kept separately, so the merged file wasn't compared with them directly. This check shows agreement with a second, independently published copy. The merge also dropped the official train/test split, though it can be recovered from the row order. M2 re-splits at random instead; M14 tests the official split as a sensitivity run.
 
 - **8,775,013 rows × 47 columns**: 45 numeric flow features plus `Sub_Attack` and `Major_Label`.
 - **19 fine-grained classes** (Benign + 18 attacks) in **6 categories**:
@@ -177,7 +177,7 @@ The raw official release (pcaps plus Bluetooth CSVs) is at http://cicresearch.ca
 
 ## Default design decisions (open questions from the proposal)
 
-The proposal ends with five open questions. Development proceeds with the defaults below. Change any of them here before M14. D6 and D7 were added during the work.
+The proposal ends with five open questions. Development proceeds with the defaults below. Change any of them here before M14. D6 to D8 were added during the work.
 
 | # | Question | Default chosen | Rationale |
 |---|---|---|---|
@@ -187,7 +187,8 @@ The proposal ends with five open questions. Development proceeds with the defaul
 | D4 | Headline drift regime | **Attack-category introduction** (t0→t5); variant and population drift as secondary | Clear and class-incremental |
 | D5 | Privacy section | **Short analysis** of what is shared (soft labels on D_pub, drift stats, escalated evidence) | Low cost, expected by TNSM reviewers |
 | D6 | Shortcut features (added in M1) | **Exclude `IAT` (Wi-Fi) and `cumulative_packet_count` (BLE) from modelling**; BLE `timestamp` is never a feature. A with-IAT run is reported as sensitivity in M14 | `IAT` alone reaches 0.83 macro-F1, and its values (mean 8.5×10⁷, max 1.7×10⁸) look like timestamps rather than inter-arrival times. **M3 A/B (t1, dev):** adding IAT lifts macro-F1 from 0.826 to 0.9998 and DoS F1 from 0.627 to 1.000, so DoS vs DDoS becomes trivially separable. That is the signature of a capture-session shortcut. It may also explain near-perfect scores in published work on this dataset, which still has to be checked against those papers before the paper claims it. Evidence: [`reports/m3/dev/shortcut_checks.md`](reports/m3/dev/shortcut_checks.md). Toggle: `features.exclude_wifi` |
-| D7 | Benign profiling rows (added in M3/M4) | **Open.** They stay in train and test because they supply the real device identities, and every metric is reported both on all rows and on `csv_only` rows. **Proposed:** use `csv_only` as the headline | Profiling rows are perfectly separable from CSV benign rows and always classified correctly (fact 9). On the dev pool at t5, removing them from train and test drops benign F1 from 0.982 to 0.815 and macro-F1 from 0.883 to 0.853. Training on them also lowers recall on CSV benign rows from 0.948 to 0.899, which bears directly on the false-positive claim in H3. The dev pool over-represents them (about 3.7 profiling rows per CSV benign row, against about 1.6 on the full pool). **Full pool, provisional, same models scored both ways:** window-average macro-F1 0.891 → 0.889, t5 macro-F1 0.872 → 0.867, t5 benign F1 0.984 → 0.954, t5 benign recall 0.983 → 0.951. The effect on macro-F1 is small, but it is about three points on benign metrics |
+| D7 | Benign profiling rows (added in M3/M4) | **Decided 2026-11-04: `csv_only` is the headline**, and `all` is reported as secondary. The rows stay in train and test because they supply the real device identities. This slice removes them from scoring only, so the models still train on them | Profiling rows are perfectly separable from CSV benign rows and always classified correctly (fact 9). On the dev pool at t5, removing them from train and test drops benign F1 from 0.982 to 0.815 and macro-F1 from 0.883 to 0.853. Training on them also lowers recall on CSV benign rows from 0.948 to 0.899, which bears directly on the false-positive claim in H3. The dev pool over-represents them (about 3.7 profiling rows per CSV benign row, against about 1.6 on the full pool). **Full pool, provisional, same models scored both ways:** window-average macro-F1 0.891 → 0.889, t5 macro-F1 0.872 → 0.867, t5 benign F1 0.984 → 0.954, t5 benign recall 0.983 → 0.951. The effect on macro-F1 is small, but it is about three points on benign metrics |
+| D8 | Drift flag at t1 (added in M5) | **Open.** The gate follows the proposal: confidence, disagreement and ADWIN on a model-output signal. **Proposed:** keep that rule for the headline, and test a PSI-based drift flag as a sensitivity run | At t1 the old model is confidently wrong: its error rate goes from 0.000 to 0.648, yet it escalates 0 flows per 1k and ADWIN on entropy and disagreement stays silent. PSI does see the shift: 13 of 15 clients have at least 10% of features over the alert, against 0 of 15 in the control. The proposal says PSI is "reported, not necessarily used for hard triggers", so either choice is allowed. A PSI flag has a cost: 7 of 15 clients also cross that line at t5, where the error rate does not rise |
 
 ---
 
@@ -244,7 +245,7 @@ IDS-code/
 │   ├── llm/           # (planned) backend, prompts, schema, verifier, policy agent
 │   └── utils/         # seed, jsonl, config, run
 ├── scripts/                      # CLI entry points per milestone
-├── notebooks/                    # kaggle_bootstrap, m3_kaggle (M3 + M4); later Notebook A (train/FL) and B (inference/LLM/XAI)
+├── notebooks/                    # kaggle_bootstrap, m3_kaggle (M3 to M5); later Notebook A (train/FL) and B (inference/LLM/XAI)
 ├── tests/
 ├── reports/m<k>/                 # tracked milestone reports (EDA, figures, manifests)
 └── results/runs/<run_id>/        # untracked: config snapshot, metrics, logs, models
@@ -365,7 +366,7 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 - The dev pool predicted these well: window average 0.891 on both for E1, 0.387 vs 0.414 for static.
 - Where the full pool differs: accuracy is lower (t5 0.817 vs 0.884), because DDoS and DoS dominate its test rows and they are the confused pair. Spoofing F1 is weaker (t5 0.805 vs 0.881).
 - Calibration lowers ECE from 0.0241 to 0.0181. The t5 model is 33 MB, with 93.7 µs/flow batched on 4 vCPU. BLE: macro-F1 0.992–0.994, AUROC 0.9998.
-- **Pending:** the final rerun on the current partition (`notebooks/m3_kaggle.ipynb`), which will write `reports/m3/full/`.
+- **Pending:** the final rerun on the current partition (`notebooks/m3_kaggle.ipynb`, which now runs M3 to M5), which will write `reports/m3/full/`.
 - Tests: 25 passing at the time (`tests/test_edge.py`: global label space with absent classes, binary mode, persistence, temperature/ECE, balanced weights, present-class macro metrics).
 
 ### M4: Evaluation harness & metrics
@@ -406,11 +407,37 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 
 ### M5: Drift detection & uncertainty gate
 **Goal:** the signals that drive escalation and adaptation.
-- [ ] ADWIN (in-house or `river`) on the error rate (when labels exist) and on label-free proxies (entropy, XGB–LGBM disagreement)
-- [ ] PSI, KL and Wasserstein per feature and client against a running baseline
-- [ ] Gate: escalate iff `conf < τc` OR `disagree > τd` OR drift flag; τ values tuned on validation data
-- [ ] Drift registry: per-window/client drift events logged to JSONL
+- [x] ADWIN (in-house, `src/ids/drift/adwin.py`) on the error rate (when labels exist) and on label-free proxies (entropy, XGB–LGBM disagreement)
+- [x] PSI, KL and Wasserstein per feature and client against a running baseline
+- [x] Gate: escalate iff `conf < τc` OR `disagree > τd` OR drift flag; τ values tuned on validation data
+- [x] Drift registry: per-window/client drift events logged to JSONL (`drift_registry.jsonl` in the run folder)
+- [x] Kaggle notebook extended: `notebooks/m3_kaggle.ipynb` now also runs M5
 - **Acceptance:** ADWIN fires at the t1–t5 boundaries with low false alarms inside windows; the escalation-rate vs τ curve is plotted.
+- **Acceptance outcome (dev):** partly met. The curve is plotted and there were no false alarms. ADWIN on the error rate fires at t1–t4 on the pooled stream, but not at t5, where the error rate doesn't rise (0.137 → 0.134). The label-free signals fire at fewer boundaries: disagreement at t2–t4, entropy at t3 only.
+
+**Results, dev pool (2026-11-04)**: [`reports/m5/dev/DRIFT.md`](reports/m5/dev/DRIFT.md)
+- ADWIN was checked against `river` 0.26.1: identical detection lists on 40 synthetic streams.
+- At each boundary, the model trained through the earlier window scores test rows from that window, then from the new one. Rows are shuffled inside each window, because the stored order is grouped by class and would look like drift. The data has no timestamps, so real bursts are absent and the false-alarm result applies only to shuffled traffic.
+
+  | signal | needs labels | boundaries caught, pooled | affected clients caught | false alarms (pre-boundary rows: 93,448) |
+  |---|---|---:|---:|---:|
+  | error rate | yes | 4/5 | 38/49 | 0 |
+  | disagreement | no | 3/5 | 14/49 | 0 |
+  | entropy | no | 1/5 | 11/49 | 0 |
+
+- **Main finding: the gate can't see t1 (D8).** The t0 model knows only Benign and DoS, and it is confidently wrong on new classes. Its error rate goes from 0.000 to 0.648, but it escalates 0 flows per 1k and accuracy on what it keeps is 0.271. Later boundaries behave better: at t3 the old model escalates 208 flows per 1k and catches 46% of its errors. The drift flag raises that to 280 per 1k and 52%.
+- **PSI sees what the model's own signals miss.** Mean PSI by window is 0.236, 0.028, 0.176, 0.064 and 0.118, against controls of 0.010, 0.015, 0.009, 0.053 and 0.031. It is noisier at t4, where the new window barely separates from its control.
+- **Gate thresholds are a cost decision.** The proposal sets no budget, so the 10% used below is an assumption. Settled models then catch 29–31% of edge errors on test, against 29.5% on validation:
+
+  | escalation budget | τc | τd | escalation rate | errors captured (validation) |
+  |---:|---:|---:|---:|---:|
+  | 5% | 0.52 | 0.15 | 0.039 | 0.107 |
+  | 10% | 0.58 | 0.40 | 0.100 | 0.295 |
+  | 20% | 0.66 | 0.30 | 0.200 | 0.526 |
+  | 30% | 0.74 | 0.15 | 0.294 | 0.702 |
+
+- **Disagreement adds almost nothing as a per-flow test:** the cost-benefit curves with it off and at τd = 0.2 nearly coincide, and τd = 0.05 is worse. It stays in the gate because the proposal specifies it, and it is still useful to ADWIN as a stream.
+- **Pending:** the full-pool report, produced by the same Kaggle notebook as M3 and M4.
 
 ### M6: Incremental local learning + rehearsal buffer
 **Goal:** client-side continual learning, before any federation.
@@ -508,3 +535,4 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 | 2026-11-04 | D2 change | README audit against the repo and the proposal. D_pub now follows the proposal (5,000 benign + 1% of each attack category: 90,429 rows, was 17,913), so M2 was rebuilt and M3 rerun on dev: E1 0.891 and static 0.387 window-average. Corrected figures, added hypotheses, experiment matrix, data source, full Quickstart. Reproduction tolerance fixed from ±0.5 to ±0.005 macro-F1. |
 | 2026-11-04 | M4 ✅ (dev) | Shared evaluation harness: detection metrics including one-vs-rest AUC, confusion per window and client cluster, forgetting, time-to-recover, per-component latency, model cost. M3 reproduced byte for byte through it, and reloaded models match the logged numbers. New findings: `Number`/`Weight` look like aggregation artifacts but barely matter; benign profiling rows are perfectly separable and inflate benign F1, so all metrics are now also reported without them (D7, open). 39 tests pass. |
 | 2026-11-04 | Data check, full pool | CSV provenance settled: merged by the author from the CICIoMT2024 CSVs, and it matches the Zenodo copy row for row on all features and labels. First Kaggle run came back (M3, 75 min) but predates the D_pub change, so its results are stored as provisional: E1 0.891 and static 0.414 window-average. Scored through M4: regression check passed; removing profiling rows costs 0.002 window-average macro-F1 and 0.03 t5 benign F1 on the full pool. Final Kaggle rerun pending. |
+| 2026-11-04 | M5 ✅ (dev) | ADWIN (matches `river` on 40 synthetic streams), PSI/KL/Wasserstein per client, gate tuned on validation rows, drift registry. No false alarms in 93k shuffled rows; error rate caught at t1–t4. Main finding: the old model at t1 is confidently wrong and escalates nothing, while PSI sees the shift (new open decision D8). D7 decided: `csv_only` is the headline. Acceptance partly met; the Kaggle notebook now runs M3 to M5 in one go. |

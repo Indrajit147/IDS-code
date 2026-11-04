@@ -98,3 +98,68 @@ def fig_per_class(pc_by_window: dict, names, windows, path, title) -> None:
     ax.set_title(title, loc="left"); _hide_spines(ax)
     cb = fig.colorbar(im, ax=ax, fraction=0.04, pad=0.02); cb.set_label("F1", color=INK2); cb.outline.set_visible(False)
     fig.tight_layout(); fig.savefig(path, dpi=150); plt.close(fig)
+
+
+def fig_signal_traces(traces: dict, windows, signals, path) -> None:
+    """Pooled stream at each boundary: rolling mean of each signal, with detections as ticks."""
+    n = len(traces)
+    fig, axes = plt.subplots(1, n, figsize=(3.1 * n, 3.3), sharey=True, squeeze=False)
+    for ax, (d, tr) in zip(axes[0], traces.items()):
+        total = len(next(iter(tr["signals"].values())))
+        win = max(total // 60, 10)
+        kernel = np.ones(win) / win
+        x = np.arange(win - 1, total)
+        for i, sig in enumerate(signals):
+            ax.plot(x, np.convolve(tr["signals"][sig], kernel, mode="valid"), color=SERIES[i], lw=1.5, label=sig)
+            fires = tr["fires"][sig]
+            ax.plot(fires, [1.05 + 0.05 * i] * len(fires), ls="", marker="|", ms=8, mew=2, color=SERIES[i])
+        ax.axvline(tr["n_pre"], color=INK2, lw=1, ls="--")
+        ax.set_title(f"into {windows[d]}", loc="left")
+        ax.set_xlabel("flows in stream"); ax.set_ylim(0, 1.18); ax.set_yticks(np.arange(0, 1.01, 0.2))
+        ax.grid(axis="y", color=GRID, lw=0.6); ax.set_axisbelow(True)
+        ax.ticklabel_format(axis="x", style="sci", scilimits=(0, 3))
+    axes[0][0].set_ylabel("rolling mean of signal")
+    handles, labels = axes[0][0].get_legend_handles_labels()
+    fig.legend(handles, labels, frameon=False, ncol=len(signals), loc="upper right")
+    fig.text(0.01, 0.95, "Dashed line: boundary. Ticks at the top of each panel: ADWIN detections.", fontsize=9, color=INK2)
+    fig.tight_layout(rect=(0, 0, 1, 0.92)); fig.savefig(path, dpi=150); plt.close(fig)
+
+
+def fig_escalation(front, chosen, path) -> None:
+    """Escalation rate against tau_c, and the cost-benefit frontier, for a few values of tau_d."""
+    shown = [t for t in (1.01, 0.2, 0.05) if t in set(front["tau_d"])]
+    fig, (a, b) = plt.subplots(1, 2, figsize=(9, 3.6))
+    for i, td in enumerate(shown):
+        g = front[front["tau_d"] == td].sort_values("tau_c")
+        label = "disagreement off" if td > 1 else f"τd = {td:g}"
+        style = dict(color=SERIES[i], lw=2, label=label, ls="--" if td > 1 else "-", zorder=3 if td > 1 else 2)
+        a.plot(g["tau_c"], g["escalation_rate"], **style)
+        b.plot(g["escalation_rate"], g["error_capture"], **style)
+    a.set_xlabel("τc (escalate if confidence is below this)"); a.set_ylabel("escalation rate")
+    a.set_title("Escalation rate vs τ", loc="left"); a.legend(frameon=False, loc="upper left")
+    b.set_xlabel("escalation rate"); b.set_ylabel("share of edge errors escalated")
+    b.set_title("Cost and benefit", loc="left")
+    b.plot([chosen["escalation_rate"]], [chosen["error_capture"]], ls="", marker="o", ms=9, color=INK,
+           markeredgecolor=SURFACE, markeredgewidth=2)
+    b.annotate(f"chosen: τc {chosen['tau_c']:.2f}, τd {chosen['tau_d']:g}", (chosen["escalation_rate"], chosen["error_capture"]),
+               xytext=(55, -48), textcoords="offset points", color=INK2, arrowprops=dict(arrowstyle="-", color=INK2, lw=0.8))
+    for ax in (a, b):
+        ax.grid(axis="y", color=GRID, lw=0.6); ax.set_axisbelow(True); ax.set_ylim(0, 1.02)
+    fig.tight_layout(); fig.savefig(path, dpi=150); plt.close(fig)
+
+
+def fig_psi_by_window(shift, windows, alert, path) -> None:
+    """Mean PSI per window, from the new traffic and from the control."""
+    fig, ax = plt.subplots(figsize=(6.4, 3.2))
+    for i, (kind, label) in enumerate((("current", "new window vs running baseline"), ("control", "control: previous window"))):
+        g = shift[shift["kind"] == kind].groupby("window")["psi"].mean()
+        ax.plot(g.index, g.values, color=SERIES[i], lw=2, marker="o", ms=7, markeredgecolor=SURFACE,
+                markeredgewidth=2, label=label)
+    ax.axhline(alert, color=INK2, lw=1, ls="--")
+    ax.annotate(f"PSI alert {alert:g}", (ax.get_xlim()[0], alert), xytext=(4, 4), textcoords="offset points", color=INK2)
+    ids = sorted(shift["window"].unique())
+    ax.set_xticks(ids, [windows[w] for w in ids]); ax.set_ylabel("mean PSI over clients and features")
+    ax.grid(axis="y", color=GRID, lw=0.6); ax.set_axisbelow(True)
+    ax.set_ylim(0, max(alert, shift.groupby(["kind", "window"])["psi"].mean().max()) * 1.45)
+    ax.legend(frameon=False, loc="upper right"); ax.set_title("Distribution shift per window", loc="left")
+    fig.tight_layout(); fig.savefig(path, dpi=150); plt.close(fig)

@@ -1,0 +1,16 @@
+boundary,signal,clients_detected,clients,affected_detected,affected,median_delay_rows,client_false_alarms,pre_rows,pooled_detected,pooled_delay_rows,pooled_false_alarms
+t1,error,15,15,15,15,37.0,0,6281,True,22.0,0
+t1,entropy,0,15,0,15,,0,6281,False,,0
+t1,disagreement,0,15,0,15,,0,6281,False,,0
+t2,error,2,15,2,7,161.5,0,17856,True,511.0,0
+t2,entropy,0,15,0,7,,0,17856,False,,0
+t2,disagreement,2,15,2,7,177.5,0,17856,True,991.0,0
+t3,error,14,15,14,15,261.5,0,18874,True,229.0,0
+t3,entropy,11,15,11,15,297.0,0,18874,True,293.0,0
+t3,disagreement,12,15,12,15,220.0,0,18874,True,229.0,0
+t4,error,6,15,6,10,293.5,0,24338,True,1261.0,0
+t4,entropy,0,15,0,10,,0,24338,False,,0
+t4,disagreement,0,15,0,10,,0,24338,True,4749.0,0
+t5,error,1,15,1,2,1501.0,0,26099,False,,0
+t5,entropy,0,15,0,2,,0,26099,False,,0
+t5,disagreement,0,15,0,2,,0,26099,False,,0

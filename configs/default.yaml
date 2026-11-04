@@ -101,9 +101,19 @@ eval:                              # M4
   n_client_clusters: 3             # clusters of clients by training label mix
   latency_threads: 1               # edge latency is reported single-threaded
 
-gate:                              # M5
+drift:                             # M5
+  adwin_delta: 0.002
+  shift_bins: 10
+  shift_max_rows: 20000            # rows per client and window for PSI/KL/Wasserstein
+  psi_alert: 0.25                  # conventional "large shift" level; reporting only
+
+gate:                              # M5; tuned values are written to reports/m5/<pool>/gate_thresholds.json
   tau_conf: 0.80
   tau_disagree: 0.20
+  max_escalation_rate: 0.10        # tuning budget; an assumption, the proposal sets none
+  tune_tau_d: [0.02, 0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 1.01]   # 1.01 turns the disagreement test off
+  drift_signal: disagreement       # label-free ADWIN signal behind the gate's drift flag
+  drift_hold_rows: 200             # flows escalated after each detection
 
 llm:                               # M11
   backend: none                    # none | hf_local | llama_cpp | api

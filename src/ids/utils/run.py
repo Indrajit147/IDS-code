@@ -91,5 +91,13 @@ class Run:
         return False
 
 
+def latest_run(cfg: dict, pattern: str) -> Path:
+    """Newest run folder matching a glob; timestamps in the names sort chronologically."""
+    runs = sorted(results_root(cfg).glob(pattern))
+    if not runs:
+        sys.exit(f"no run matching {pattern} under {results_root(cfg)}; run that milestone's script first")
+    return runs[-1]
+
+
 def load_json(path: str | Path):
     return json.loads(Path(path).read_text(encoding="utf-8"))
