@@ -69,7 +69,9 @@ class EdgeEnsemble:
         self.cfg = cfg
         self.classes_: np.ndarray | None = None     # global codes present at fit time
         self.xgb_: xgb.XGBClassifier | None = None
-        self.lgb_: lgb.LGBMClassifier | None = None
+        self.lgb_booster_: lgb.Booster | None = None
+        self.lgb_iter_: int | None = None           # None = use every tree in the booster
+        self.lgb_threads_: int | None = None
         self.w_xgb_: float = 0.5
         self.T_: float = 1.0
         self.fit_info_: dict = {}
@@ -94,9 +96,10 @@ class EdgeEnsemble:
                                          **obj, **c.xgb_params})
         self.xgb_.fit(X, yl, sample_weight=sw, eval_set=[(Xv_, yvl)], sample_weight_eval_set=[swv], verbose=False)
         t1 = time.perf_counter()
-        self.lgb_ = lgb.LGBMClassifier(**{"n_jobs": c.n_jobs, "random_state": c.seed, "verbose": -1, **c.lgb_params})
-        self.lgb_.fit(X, yl, sample_weight=sw, eval_set=[(Xv_, yvl)], eval_sample_weight=[swv],
-                      callbacks=[lgb.early_stopping(c.early_stopping, verbose=False)])
+        lgbm = lgb.LGBMClassifier(**{"n_jobs": c.n_jobs, "random_state": c.seed, "verbose": -1, **c.lgb_params})
+        lgbm.fit(X, yl, sample_weight=sw, eval_set=[(Xv_, yvl)], eval_sample_weight=[swv],
+                 callbacks=[lgb.early_stopping(c.early_stopping, verbose=False)])
+        self.lgb_booster_, self.lgb_iter_ = lgbm.booster_, lgbm.best_iteration_ or None
         t2 = time.perf_counter()
 
         px, pl = self._raw(Xv_)
@@ -107,7 +110,7 @@ class EdgeEnsemble:
         self.fit_info_ = {
             "n_train": int(len(y)), "n_val": int(len(yvl)), "classes": self.classes_.tolist(),
             "xgb_best_iteration": int(getattr(self.xgb_, "best_iteration", -1) or -1),
-            "lgb_best_iteration": int(self.lgb_.best_iteration_ or -1),
+            "lgb_best_iteration": int(self.lgb_iter_ or -1),
             "fit_seconds_xgb": round(t1 - t0, 2), "fit_seconds_lgb": round(t2 - t1, 2),
             "w_xgb": self.w_xgb_, "temperature": self.T_,
             "val_nll_by_w": {str(w): round(v, 5) for w, v in losses.items()},
@@ -119,7 +122,8 @@ class EdgeEnsemble:
         """Local-class probabilities from each model (columns = self.classes_)."""
         # LightGBM booster directly: skips the sklearn wrapper's per-call validation
         # (noticeable at batch size 1) and its feature-name warning on numpy input.
-        pl = self.lgb_.booster_.predict(X, num_iteration=self.lgb_.best_iteration_ or None)
+        extra = {"num_threads": self.lgb_threads_} if self.lgb_threads_ else {}
+        pl = self.lgb_booster_.predict(X, num_iteration=self.lgb_iter_, **extra)
         if pl.ndim == 1:
             pl = np.column_stack([1 - pl, pl])
         return self.xgb_.predict_proba(X), pl
@@ -146,28 +150,76 @@ class EdgeEnsemble:
     def save(self, d: Path) -> dict:
         d.mkdir(parents=True, exist_ok=True)
         self.xgb_.save_model(d / "xgb.json")
-        self.lgb_.booster_.save_model(str(d / "lgb.txt"))
+        self.lgb_booster_.save_model(str(d / "lgb.txt"))
         meta = {"classes": self.classes_.tolist(), "w_xgb": self.w_xgb_, "temperature": self.T_,
                 "n_classes": self.cfg.n_classes, "fit_info": self.fit_info_}
         (d / "edge.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
         return {"xgb_bytes": (d / "xgb.json").stat().st_size, "lgb_bytes": (d / "lgb.txt").stat().st_size}
 
+    @classmethod
+    def load(cls, d: Path, n_jobs: int = -1) -> "EdgeEnsemble":
+        """Inverse of save(): predictions match the saved model; training state is not restored."""
+        d = Path(d)
+        meta = json.loads((d / "edge.json").read_text(encoding="utf-8"))
+        m = cls(EdgeConfig(n_classes=meta["n_classes"], n_jobs=n_jobs))
+        m.classes_ = np.asarray(meta["classes"])
+        m.w_xgb_, m.T_, m.fit_info_ = meta["w_xgb"], meta["temperature"], meta["fit_info"]
+        m.xgb_ = xgb.XGBClassifier(n_jobs=n_jobs)
+        m.xgb_.load_model(d / "xgb.json")
+        m.lgb_booster_ = lgb.Booster(model_file=str(d / "lgb.txt"))  # save_model kept only the best iterations
+        return m
 
-def measure_latency(model: EdgeEnsemble, X: np.ndarray, n_single: int = 300, batch: int = 10_000,
-                    seed: int = 0) -> dict:
-    """Edge inference cost: single-flow latency (P50/P95, ms) and batched throughput."""
-    r = np.random.default_rng(seed)
-    idx = r.integers(0, len(X), n_single)
-    model.predict_proba(X[:2])  # warm-up
+    # ---------------------------------------------------------------- cost
+    def set_threads(self, n: int | None) -> None:
+        """Inference threads (None = configured default)."""
+        self.xgb_.set_params(n_jobs=n if n else self.cfg.n_jobs)
+        self.lgb_threads_ = n
+
+    def tree_counts(self) -> dict[str, int]:
+        """Trees actually used at inference, counting early stopping."""
+        booster = self.xgb_.get_booster()
+        per_round = len(self.classes_) if len(self.classes_) > 2 else 1
+        best = getattr(self.xgb_, "best_iteration", None)
+        rounds = best + 1 if best is not None else booster.num_boosted_rounds()
+        per_iter = self.lgb_booster_.num_model_per_iteration()
+        lgb_trees = self.lgb_iter_ * per_iter if self.lgb_iter_ else self.lgb_booster_.num_trees()
+        return {"xgb": int(rounds * per_round), "lgb": int(lgb_trees)}
+
+
+def _time_calls(fn, X: np.ndarray, idx: np.ndarray, batch: np.ndarray) -> dict:
+    fn(X[:2])  # warm-up
     times = []
     for i in idx:
         t = time.perf_counter()
-        model.predict_proba(X[i:i + 1])
+        fn(X[i:i + 1])
         times.append((time.perf_counter() - t) * 1e3)
-    b = X[:min(batch, len(X))]
     t = time.perf_counter()
-    model.predict_proba(b)
+    fn(batch)
     dt = time.perf_counter() - t
-    times = np.asarray(times)
     return {"single_ms_p50": float(np.percentile(times, 50)), "single_ms_p95": float(np.percentile(times, 95)),
-            "batch_rows": int(len(b)), "batch_us_per_row": float(dt / len(b) * 1e6)}
+            "batch_rows": int(len(batch)), "batch_us_per_row": float(dt / len(batch) * 1e6)}
+
+
+def measure_latency(model: EdgeEnsemble, X: np.ndarray, n_single: int = 300, batch: int = 10_000,
+                    seed: int = 0) -> dict:
+    """Edge inference cost of the full fused + calibrated ensemble: single-flow latency
+    (P50/P95, ms) and batched throughput."""
+    idx = np.random.default_rng(seed).integers(0, len(X), n_single)
+    return _time_calls(model.predict_proba, X, idx, X[:min(batch, len(X))])
+
+
+def measure_component_latency(model: EdgeEnsemble, X: np.ndarray, threads: int = 1, n_single: int = 300,
+                              batch: int = 10_000, seed: int = 0) -> dict[str, dict]:
+    """Latency of XGBoost alone, LightGBM alone and the fused ensemble (the proposal's system
+    metric), pinned to `threads` so numbers compare across machines with different core counts."""
+    idx = np.random.default_rng(seed).integers(0, len(X), n_single)
+    b = X[:min(batch, len(X))]
+    extra = {"num_threads": threads} if threads else {}
+    fns = {"xgb": model.xgb_.predict_proba,
+           "lgb": lambda x: model.lgb_booster_.predict(x, num_iteration=model.lgb_iter_, **extra),
+           "ensemble": model.predict_proba}
+    model.set_threads(threads)
+    try:
+        return {k: _time_calls(f, X, idx, b) for k, f in fns.items()}
+    finally:
+        model.set_threads(None)

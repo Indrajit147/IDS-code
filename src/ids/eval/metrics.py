@@ -37,6 +37,9 @@ def detection_metrics(y: np.ndarray, p: np.ndarray, class_names: list[str]) -> d
     yb = (y != 0).astype(int)
     if 0 < yb.sum() < len(yb):
         out["auroc_attack_vs_benign"] = float(roc_auc_score(yb, 1 - p[:, 0]))
+    aucs = [roc_auc_score(y == c, p[:, c]) for c in labels if 0 < (y == c).sum() < len(y)]
+    if aucs:
+        out["macro_auc_ovr"] = float(np.mean(aucs))
     return out
 
 
