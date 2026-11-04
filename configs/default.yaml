@@ -96,6 +96,13 @@ models:                            # M3 edge ensemble (edge-friendly limits)
     colsample_bytree: 0.8
     min_child_samples: 20
 
+incremental:                       # M6; these budgets are assumptions, the proposal sets none
+  first_trees: 50                  # rounds at most for a client's first fit, so t0 doesn't saturate
+  new_trees: 50                    # rounds at most per update
+  max_delta_step: 10.0             # leaf output cap, chosen on validation rows; see src/ids/models/incremental.py
+  rehearsal_capacity: 2000         # rows per client, class-balanced
+  rehearsal_sweep: [500, 8000]
+
 eval:                              # M4
   recover_eps: 0.02                # time-to-recover: back within this of pre-drift macro-F1
   n_client_clusters: 3             # clusters of clients by training label mix
