@@ -118,7 +118,7 @@ Cross-check (2026-11-04), against the independent [Zenodo derivative](https://ze
 - **Labels:** the 19 CSV labels map one-to-one onto Zenodo's labels, with no disagreement on any row.
 - **Coverage and order:** all 72 source files are represented. The CSV is one block for the official train split (19 classes; 7.16M rows) followed by one for the official test split (19 classes; 1.61M rows).
 
-The files from CIC weren't kept separately, so the merged file wasn't compared with them directly. This check shows agreement with a second, independently published copy. The merge also dropped the official train/test split, though it can be recovered from the row order. M2 re-splits at random instead; M14 tests the official split as a sensitivity run.
+The merged file wasn't compared directly with the files as CIC distributes them. This check shows agreement with a second, independently published copy. The merge also dropped the official train/test split, though it can be recovered from the row order. M2 re-splits at random instead; M14 tests the official split as a sensitivity run.
 
 - **8,775,013 rows × 47 columns**: 45 numeric flow features plus `Sub_Attack` and `Major_Label`.
 - **19 fine-grained classes** (Benign + 18 attacks) in **6 categories**:
