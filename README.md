@@ -52,9 +52,9 @@ Rules:
 | M0  | Project scaffolding & environment                  | Reproducibility design        | ✅ Done | 2026-11-04 |
 | M1  | Data ingestion, cleaning & label harmonization     | Dataset preparation 1–4       | ✅ Done | 2026-11-04 |
 | M2  | Synthetic drift timeline, clients & D_pub          | Time windows, client sim, D_pub | ✅ Done | 2026-11-04 |
-| M3  | Edge ensemble + centralized/static baselines       | Edge model, E1, static baseline | ✅ Done (dev) · full pool provisional, final Kaggle rerun pending | 2026-11-04 |
-| M4  | Evaluation harness & metrics                       | Evaluation metrics            | ✅ Done (dev) · full pool provisional, final Kaggle rerun pending | 2026-11-04 |
-| M5  | Drift detection & uncertainty gate                 | ADWIN, PSI/KL/W, gate τc/τd   | ✅ Done (dev), acceptance partly met · full pool pending on Kaggle | 2026-11-04 |
+| M3  | Edge ensemble + centralized/static baselines       | Edge model, E1, static baseline | ✅ Done (dev + full) | 2026-11-04 |
+| M4  | Evaluation harness & metrics                       | Evaluation metrics            | ✅ Done (dev + full) | 2026-11-04 |
+| M5  | Drift detection & uncertainty gate                 | ADWIN, PSI/KL/W, gate τc/τd   | ✅ Done (dev + full), acceptance partly met | 2026-11-04 |
 | M6  | Incremental local learning + rehearsal buffer      | DA-FedDistill step 1          | ⬜ Not started | — |
 | M7  | DA-FedDistill (federated distillation)             | E3, novelty claim B           | ⬜ Not started | — |
 | M8  | Neural FL baselines (FedAvg / FedProx MLP)         | E2, baselines                 | ⬜ Not started | — |
@@ -187,8 +187,8 @@ The proposal ends with five open questions. Development proceeds with the defaul
 | D4 | Headline drift regime | **Attack-category introduction** (t0→t5); variant and population drift as secondary | Clear and class-incremental |
 | D5 | Privacy section | **Short analysis** of what is shared (soft labels on D_pub, drift stats, escalated evidence) | Low cost, expected by TNSM reviewers |
 | D6 | Shortcut features (added in M1) | **Exclude `IAT` (Wi-Fi) and `cumulative_packet_count` (BLE) from modelling**; BLE `timestamp` is never a feature. A with-IAT run is reported as sensitivity in M14 | `IAT` alone reaches 0.83 macro-F1, and its values (mean 8.5×10⁷, max 1.7×10⁸) look like timestamps rather than inter-arrival times. **M3 A/B (t1, dev):** adding IAT lifts macro-F1 from 0.826 to 0.9998 and DoS F1 from 0.627 to 1.000, so DoS vs DDoS becomes trivially separable. That is the signature of a capture-session shortcut. It may also explain near-perfect scores in published work on this dataset, which still has to be checked against those papers before the paper claims it. Evidence: [`reports/m3/dev/shortcut_checks.md`](reports/m3/dev/shortcut_checks.md). Toggle: `features.exclude_wifi` |
-| D7 | Benign profiling rows (added in M3/M4) | **Decided 2026-11-04: `csv_only` is the headline**, and `all` is reported as secondary. The rows stay in train and test because they supply the real device identities. This slice removes them from scoring only, so the models still train on them | Profiling rows are perfectly separable from CSV benign rows and always classified correctly (fact 9). On the dev pool at t5, removing them from train and test drops benign F1 from 0.982 to 0.815 and macro-F1 from 0.883 to 0.853. Training on them also lowers recall on CSV benign rows from 0.948 to 0.899, which bears directly on the false-positive claim in H3. The dev pool over-represents them (about 3.7 profiling rows per CSV benign row, against about 1.6 on the full pool). **Full pool, provisional, same models scored both ways:** window-average macro-F1 0.891 → 0.889, t5 macro-F1 0.872 → 0.867, t5 benign F1 0.984 → 0.954, t5 benign recall 0.983 → 0.951. The effect on macro-F1 is small, but it is about three points on benign metrics |
-| D8 | Drift flag at t1 (added in M5) | **Open.** The gate follows the proposal: confidence, disagreement and ADWIN on a model-output signal. **Proposed:** keep that rule for the headline, and test a PSI-based drift flag as a sensitivity run | At t1 the old model is confidently wrong: its error rate goes from 0.000 to 0.648, yet it escalates 0 flows per 1k and ADWIN on entropy and disagreement stays silent. PSI does see the shift: 13 of 15 clients have at least 10% of features over the alert, against 0 of 15 in the control. The proposal says PSI is "reported, not necessarily used for hard triggers", so either choice is allowed. A PSI flag has a cost: 7 of 15 clients also cross that line at t5, where the error rate does not rise |
+| D7 | Benign profiling rows (added in M3/M4) | **Decided 2026-11-04: `csv_only` is the headline**, and `all` is reported as secondary. The rows stay in train and test because they supply the real device identities. This slice removes them from scoring only, so the models still train on them | Profiling rows are perfectly separable from CSV benign rows and always classified correctly (fact 9). On the dev pool at t5, removing them from train and test drops benign F1 from 0.982 to 0.815 and macro-F1 from 0.883 to 0.853. Training on them also lowers recall on CSV benign rows from 0.948 to 0.899, which bears directly on the false-positive claim in H3. The dev pool over-represents them (about 3.7 profiling rows per CSV benign row, against about 1.6 on the full pool). **Full pool, same models scored both ways:** window-average macro-F1 0.8915 → 0.8897, t5 macro-F1 0.8718 → 0.8668, t5 benign F1 0.984 → 0.954, t5 benign recall 0.984 → 0.954. The effect on macro-F1 is small, but it is three points on benign metrics |
+| D8 | Drift flag at t1 (added in M5) | **Open.** The gate follows the proposal: confidence, disagreement and ADWIN on a model-output signal. **Proposed:** keep that rule for the headline, and test a PSI-based drift flag as a sensitivity run | At t1 the old model is confidently wrong. On the full pool its error rate goes from 0.000 to 0.715, yet it escalates 0.03 flows per 1k, and ADWIN on entropy and disagreement stays silent. PSI does see the shift: 12 of 15 clients have at least 10% of features over the alert, against 0 of 15 in the control. After t1 that flag barely fires (2, 1, 1 and 2 clients at t2–t5, against 2, 0, 1 and 0 in the controls), so it would cost little, but it also misses t3, where errors do rise. It amounts to a detector for t1 only. The proposal says PSI is "reported, not necessarily used for hard triggers", so either choice is allowed. The dev pool looked different at t5 (7 of 15 clients), so that estimate of the cost was too high |
 
 ---
 
@@ -355,18 +355,18 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 - BLE: macro-F1 0.992–0.995, AUROC ≥ 0.999. BLE DoS is nearly trivially separable from packet-level fields.
 - Shortcut and data checks are tracked in [`reports/m3/dev/shortcut_checks.md`](reports/m3/dev/shortcut_checks.md) (`scripts/m3_shortcut_checks.py`): D6, dataset facts 8–9, D7.
 
-**Results, full pool, provisional (2026-11-04)**: [`reports/m3/full_old_dpub/RESULTS.md`](reports/m3/full_old_dpub/RESULTS.md)
-- Kaggle run at commit `a27f725`, **before D_pub changed**: it used the 17,913-row D_pub, so these rows differ slightly from the current partition. 75 min on 4 vCPU.
+**Results, full pool (2026-11-04)**: [`reports/m3/full/RESULTS.md`](reports/m3/full/RESULTS.md)
+- Kaggle run `20261104-154549_m3_baselines_full` at commit `72001d4` on 4 vCPU: M3 took 51 min, M4 6 min and M5 7 min. Its test and D_pub row counts match the tracked M2 report. The runs are flagged `git_dirty`, most likely because the notebook's M2 step rewrites tracked `reports/m2/full` files; the zip holds no diff to confirm that.
 
   | window | t0 | t1 | t2 | t3 | t4 | t5 | window avg | avg excl. t0 |
   |---|---:|---:|---:|---:|---:|---:|---:|---:|
-  | E1 centralized macro-F1 | 1.000 | 0.831 | 0.867 | 0.894 | 0.883 | 0.872 | **0.891** | 0.869 |
-  | Static (t0 only) macro-F1 | 1.000 | 0.463 | 0.336 | 0.263 | 0.212 | 0.208 | **0.414** | 0.296 |
+  | E1 centralized macro-F1 | 1.000 | 0.831 | 0.868 | 0.895 | 0.883 | 0.872 | **0.892** | 0.870 |
+  | Static (t0 only) macro-F1 | 1.000 | 0.463 | 0.337 | 0.263 | 0.213 | 0.209 | **0.414** | 0.297 |
 
-- The dev pool predicted these well: window average 0.891 on both for E1, 0.387 vs 0.414 for static.
-- Where the full pool differs: accuracy is lower (t5 0.817 vs 0.884), because DDoS and DoS dominate its test rows and they are the confused pair. Spoofing F1 is weaker (t5 0.805 vs 0.881).
-- Calibration lowers ECE from 0.0241 to 0.0181. The t5 model is 33 MB, with 93.7 µs/flow batched on 4 vCPU. BLE: macro-F1 0.992–0.994, AUROC 0.9998.
-- **Pending:** the final rerun on the current partition (`notebooks/m3_kaggle.ipynb`, which now runs M3 to M5), which will write `reports/m3/full/`.
+- All rows, as in the dev table above; the CSV-only headline (D7) is in M4 below.
+- The dev pool predicted E1 well: window average 0.891 there against 0.892 here. Static is 0.387 against 0.414.
+- Where the full pool differs: accuracy is lower (t5 0.818 vs 0.884), because DDoS and DoS dominate its test rows and they are the confused pair. Spoofing F1 is weaker (t5 0.801 vs 0.881).
+- Calibration lowers ECE from 0.0239 to 0.0172. The t5 model is 36.5 MB with 1,800 XGB + 1,326 LGBM trees, at 74 µs/flow batched on 4 vCPU. BLE: macro-F1 0.992–0.994, AUROC 0.9998.
 - Tests: 25 passing at the time (`tests/test_edge.py`: global label space with absent classes, binary mode, persistence, temperature/ECE, balanced weights, present-class macro metrics).
 
 ### M4: Evaluation harness & metrics
@@ -393,17 +393,16 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 - **Time to recover:** E1 recovers within one update at t2–t5. It never gets back to its t1 reference, because that reference is the perfect t0 score, so comparisons in M7/M9 should focus on t2–t5. Static never recovers. These are the reference points for H2.
 - **Client clusters:** at t5, cluster macro-F1 ranges from 0.857 to 0.906.
 - **Edge cost, one thread:** t5 ensemble about 3 ms single-flow and about 100 µs/flow batched. Up to 1,800 XGBoost + 1,038 LightGBM trees, at most 24,780 comparisons per flow, 27 MB.
-- **Full pool, provisional:** [`reports/m4/full_old_dpub/EVALUATION.md`](reports/m4/full_old_dpub/EVALUATION.md). The saved Kaggle models were scored locally on a rebuild of their own partition from commit `a27f725`. The regression check passed on all 160 rows within 5×10⁻¹¹, across XGBoost 3.4.1 on Linux and 3.2 on Windows.
+- **Full pool:** [`reports/m4/full/EVALUATION.md`](reports/m4/full/EVALUATION.md). The regression check passed on all 160 rows within 5×10⁻¹¹. CSV-only rows are the headline (D7).
 
   | method | slice | window avg | avg excl. t0 | final (t5) | class forgetting |
   |---|---|---:|---:|---:|---:|
-  | E1 | all rows | 0.8912 | 0.8694 | 0.8723 | 0.0286 |
-  | E1 | CSV rows only | 0.8894 | 0.8673 | 0.8673 | 0.0310 |
-  | Static | all rows | 0.4135 | 0.2962 | 0.2082 | n/a |
-  | Static | CSV rows only | 0.4014 | 0.2817 | 0.1826 | n/a |
+  | **E1** | **CSV rows only** | **0.8897** | **0.8677** | **0.8668** | **0.0277** |
+  | E1 | all rows | 0.8915 | 0.8698 | 0.8718 | 0.0254 |
+  | **Static** | **CSV rows only** | **0.4024** | **0.2829** | **0.1840** | n/a |
+  | Static | all rows | 0.4140 | 0.2968 | 0.2089 | n/a |
 
-- **Pending:** the final report on the current partition, produced by the same Kaggle notebook as M3.
-- Tests: 39 passing (`tests/test_eval.py`: forgetting, time-to-recover including static and late updates, one-vs-rest AUC, per-client routing, slices, aliases, identical predictions after save/load, thread pinning, system accounting).
+- One thread, on Kaggle: the t5 ensemble takes 1.02 ms per single flow (P50) and 142 µs/flow batched.
 
 ### M5: Drift detection & uncertainty gate
 **Goal:** the signals that drive escalation and adaptation.
@@ -413,7 +412,7 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 - [x] Drift registry: per-window/client drift events logged to JSONL (`drift_registry.jsonl` in the run folder)
 - [x] Kaggle notebook extended: `notebooks/m3_kaggle.ipynb` now also runs M5
 - **Acceptance:** ADWIN fires at the t1–t5 boundaries with low false alarms inside windows; the escalation-rate vs τ curve is plotted.
-- **Acceptance outcome (dev):** partly met. The curve is plotted and there were no false alarms. ADWIN on the error rate fires at t1–t4 on the pooled stream, but not at t5, where the error rate doesn't rise (0.137 → 0.134). The label-free signals fire at fewer boundaries: disagreement at t2–t4, entropy at t3 only.
+- **Acceptance outcome:** partly met on both pools. On the full pool, ADWIN on the error rate catches all 33 affected clients with no false alarms, but the pooled stream fires at t1–t3 only: the error rate barely moves at t4 (0.181 → 0.185) and t5 (0.185 → 0.185). The label-free signals catch 16 of 33 (disagreement) and 11 of 33 (entropy). On the dev pool: The curve is plotted and there were no false alarms. ADWIN on the error rate fires at t1–t4 on the pooled stream, but not at t5, where the error rate doesn't rise (0.137 → 0.134). The label-free signals fire at fewer boundaries: disagreement at t2–t4, entropy at t3 only.
 
 **Results, dev pool (2026-11-04)**: [`reports/m5/dev/DRIFT.md`](reports/m5/dev/DRIFT.md)
 - ADWIN was checked against `river` 0.26.1: identical detection lists on 40 synthetic streams.
@@ -437,7 +436,27 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
   | 30% | 0.74 | 0.15 | 0.294 | 0.702 |
 
 - **Disagreement adds almost nothing as a per-flow test:** the cost-benefit curves with it off and at τd = 0.2 nearly coincide, and τd = 0.05 is worse. It stays in the gate because the proposal specifies it, and it is still useful to ADWIN as a stream.
-- **Pending:** the full-pool report, produced by the same Kaggle notebook as M3 and M4.
+
+**Results, full pool (2026-11-04)**: [`reports/m5/full/DRIFT.md`](reports/m5/full/DRIFT.md)
+
+  | signal | needs labels | boundaries caught, pooled | affected clients caught | false alarms (pre-boundary rows: 1,448,425) |
+  |---|---|---:|---:|---:|
+  | error rate | yes | 3/5 | 33/33 | 0 |
+  | disagreement | no | 2/5 | 16/33 | 0 |
+  | entropy | no | 1/5 | 11/33 | 0 |
+
+- **The t1 blind spot is confirmed (D8).** The pooled error rate jumps from 0.000 to 0.715, while the old model escalates 0.03 flows per 1k and accuracy on what it keeps is 0.259. Later boundaries are milder than on the dev pool: at t3 the old model escalates 118 flows per 1k and catches 31% of its errors, and the drift flag adds little (124 per 1k, 31%).
+- **PSI is much weaker here after t1.** Mean PSI by window is 0.243, 0.047, 0.053, 0.026 and 0.065, against controls of 0.001, 0.047, 0.020, 0.025 and 0.016, so t2 and t4 can't be told from their controls. On the dev pool t3 looked strong (0.176) and here it is 0.053.
+- **The gate catches fewer errors at each budget than on the dev pool:**
+
+  | escalation budget | τc | τd | escalation rate | errors captured (validation) |
+  |---:|---:|---:|---:|---:|
+  | 5% | 0.52 | 0.15 | 0.043 | 0.100 |
+  | 10% | 0.56 | 0.20 | 0.095 | 0.241 |
+  | 20% | 0.64 | off | 0.200 | 0.456 |
+  | 30% | 0.70 | 0.10 | 0.294 | 0.609 |
+
+- At the 10% budget, settled models send 88–104 flows per 1k to the cloud and catch 24–26% of edge errors on test, in line with validation.
 
 ### M6: Incremental local learning + rehearsal buffer
 **Goal:** client-side continual learning, before any federation.
@@ -536,3 +555,4 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 | 2026-11-04 | M4 ✅ (dev) | Shared evaluation harness: detection metrics including one-vs-rest AUC, confusion per window and client cluster, forgetting, time-to-recover, per-component latency, model cost. M3 reproduced byte for byte through it, and reloaded models match the logged numbers. New findings: `Number`/`Weight` look like aggregation artifacts but barely matter; benign profiling rows are perfectly separable and inflate benign F1, so all metrics are now also reported without them (D7, open). 39 tests pass. |
 | 2026-11-04 | Data check, full pool | CSV provenance settled: merged by the author from the CICIoMT2024 CSVs, and it matches the Zenodo copy row for row on all features and labels. First Kaggle run came back (M3, 75 min) but predates the D_pub change, so its results are stored as provisional: E1 0.891 and static 0.414 window-average. Scored through M4: regression check passed; removing profiling rows costs 0.002 window-average macro-F1 and 0.03 t5 benign F1 on the full pool. Final Kaggle rerun pending. |
 | 2026-11-04 | M5 ✅ (dev) | ADWIN (matches `river` on 40 synthetic streams), PSI/KL/Wasserstein per client, gate tuned on validation rows, drift registry. No false alarms in 93k shuffled rows; error rate caught at t1–t4. Main finding: the old model at t1 is confidently wrong and escalates nothing, while PSI sees the shift (new open decision D8). D7 decided: `csv_only` is the headline. Acceptance partly met; the Kaggle notebook now runs M3 to M5 in one go. |
+| 2026-11-04 | M3–M5 full pool | Final Kaggle run at `72001d4` (M3 51 min, M4 6 min, M5 7 min) replaces the provisional results. Headline, CSV rows only: E1 0.890 window-average and 0.867 at t5; static 0.402 and 0.184. M5: error-rate ADWIN catches all 33 affected clients with no false alarms in 1.45M rows; the gate is still blind at t1 (D8); PSI is weak after t1; the 10% budget catches 24% of errors. |
