@@ -3,23 +3,33 @@
 > Edge tree-ensemble detection (XGBoost + LightGBM), drift-adaptive federated distillation (DA-FedDistill),
 > SHAP explainability, and inference-time cloud LLM verification, evaluated on CICIoMT2024.
 
-Source documents in this folder:
-- `LLM-Assisted Drift-Adaptive Incremental Federated Intrusion Detection in IoT_ Edge Ensemble Learning.docx`: full proposal (experiment matrix E1–E7, baselines, ablations, metrics).
+Source documents (kept locally and not in this public repo, because the proposal is unpublished):
+- `LLM-Assisted Drift-Adaptive Incremental Federated Intrusion Detection in IoT_ Edge Ensemble Learning.docx`: full proposal (experiment matrix E1–E7, baselines, ablations, metrics, hypotheses).
 - `Proposal explanation.docx`: plain-language walkthrough, plus the training-time role of the LLM as an "adaptation-policy" agent.
+
+The parts later milestones depend on are copied into this README; see *Hypotheses* and *Experiment matrix*.
 
 This README is the project's living plan. **It is updated after every milestone**: the status table, the milestone's checklist, its results, and the progress log. Each update is also pushed to [GitHub](https://github.com/Indrajit147/IDS-code).
 
 ## Quickstart
 
 ```bash
-# local (Windows/Linux, CPU)
-pip install -e . --no-deps        # deps already installed; see pyproject.toml for the list
-python -m pytest -q               # unit tests
-python scripts/m0_smoke_run.py    # writes results/runs/<timestamp>_m0_smoke/
+# Install. Use `pip install -e ".[dev]"` on a fresh machine; --no-deps keeps an existing stack (Kaggle) intact.
+pip install -e ".[dev]"
+python -m pytest -q               # unit tests (no data needed)
+python scripts/m0_smoke_run.py    # writes results/runs/<timestamp>_m0_smoke/ and reports which data it can find
 python scripts/m0_smoke_run.py --set seed=7 gate.tau_conf=0.7   # dotted overrides
+
+# Pipeline. Needs the raw data (see Dataset facts and External data); --pool dev runs on the stratified sample.
+python scripts/m1_prepare_data.py        # raw CSV + Zenodo -> data/processed/
+python scripts/m1_eda.py                 # reports/m1/
+python scripts/m2_build_partitions.py    # data/splits/, reports/m2/
+python scripts/m3_baselines.py --pool dev        # E1 + static + BLE; reports/m3/dev/
+python scripts/m3_shortcut_checks.py --pool dev  # IAT, Number/Weight, profiling-row checks
+python scripts/m4_evaluate.py --pool dev         # regression check + standard report; reports/m4/dev/
 ```
 
-On Kaggle, open `notebooks/kaggle_bootstrap.ipynb`. It clones this repo, installs it with `--no-deps`, and auto-discovers the attached data under `/kaggle/input`. The environment is detected automatically and can be forced with `IDS_ENV=local|kaggle`.
+On Kaggle, open `notebooks/kaggle_bootstrap.ipynb`. It clones this repo, installs it with `--no-deps`, and auto-discovers the attached data under `/kaggle/input`. The environment is detected automatically and can be forced with `IDS_ENV=local|kaggle`. The Kaggle dataset needs only the five files of `data/processed/`: `data_manifest.json`, `wifi_mqtt_full.parquet`, `wifi_mqtt_dev.parquet`, `wifi_profiling.parquet` and `ble.parquet`.
 
 ## Compute plan: hybrid local + Kaggle
 
@@ -43,7 +53,7 @@ Rules:
 | M1  | Data ingestion, cleaning & label harmonization     | Dataset preparation 1–4       | ✅ Done | 2026-11-04 |
 | M2  | Synthetic drift timeline, clients & D_pub          | Time windows, client sim, D_pub | ✅ Done | 2026-11-04 |
 | M3  | Edge ensemble + centralized/static baselines       | Edge model, E1, static baseline | ✅ Done (dev) · full-pool run pending on Kaggle | 2026-11-04 |
-| M4  | Evaluation harness & metrics                       | Evaluation metrics            | ⬜ Not started | — |
+| M4  | Evaluation harness & metrics                       | Evaluation metrics            | ✅ Done (dev) · full-pool run pending on Kaggle | 2026-11-04 |
 | M5  | Drift detection & uncertainty gate                 | ADWIN, PSI/KL/W, gate τc/τd   | ⬜ Not started | — |
 | M6  | Incremental local learning + rehearsal buffer      | DA-FedDistill step 1          | ⬜ Not started | — |
 | M7  | DA-FedDistill (federated distillation)             | E3, novelty claim B           | ⬜ Not started | — |
@@ -100,6 +110,8 @@ Three loops: the **inference loop** (edge to cloud escalation), the **adaptation
 
 ## Dataset facts (measured from `data/raw/ciciomt2024_full_8p7m.csv`)
 
+Source file: `ciciomt2024_full_8p7m.csv`, SHA-256 `f7cb6fe30c4e4f0cb415a5e888f9bfcc7a652189a094447c72b8428b6b8f0eb6`. The proposal names the Kaggle dataset [cyberdeeplearning/ciciomt2024](https://www.kaggle.com/datasets/cyberdeeplearning/ciciomt2024) as the distribution channel. **To confirm:** whether this merged file came from there.
+
 - **8,775,013 rows × 47 columns**: 45 numeric flow features plus `Sub_Attack` and `Major_Label`.
 - **19 fine-grained classes** (Benign + 18 attacks) in **6 categories**:
 
@@ -120,6 +132,8 @@ Three loops: the **inference loop** (edge to cloud escalation), the **adaptation
 5. **Constant columns:** on the full data only `Drate` is constant (verified in M1). `Telnet`, `IRC` and `SMTP` only looked constant in an early 300k-row sample. There are no NaN or inf values.
 6. **Shortcut features (M1 EDA):** `IAT` alone gives 0.83 6-class macro-F1 and BLE `timestamp` alone gives 0.97. These look like capture artifacts rather than attack behaviour (decision D6).
 7. **Duplicates:** 7,379 exact duplicate rows (0.08%), all within a single class (no conflicting labels), mostly Recon-Port-Scan. The Zenodo Wi-Fi table is effectively a de-duplicated copy of this CSV.
+8. **`Number` and `Weight` look like aggregation artifacts (found in M3).** `Number` is exactly 9.5 for 99.9% of DoS and DDoS rows, exactly 5.5 or 13.5 for Benign, Recon and Spoofing, and 10.0 in the profiling rows, yet every class averages about 9.5. Alone it separates Benign from DoS at t0 (0.9995 macro-F1). `Weight` tracks it. Removing both barely changes E1 (t1 0.8256 → 0.8255, t5 0.8827 → 0.8838), so they are kept for now and tested again in M14.
+9. **The two benign sources can be told apart perfectly (found in M3).** A classifier separates CSV benign rows from Zenodo profiling rows with hold-out AUC 1.0000 on the dev pool, even without `Number` and `Weight`. Profiling rows are always classified correctly, which flatters benign metrics. See decision D7.
 
 ## External data: Zenodo CICIoMT2024 derivative (incl. Bluetooth)
 
@@ -134,12 +148,12 @@ Source: [Zenodo record 19452870](https://zenodo.org/records/19452870), DOI 10.52
 
 BLE caveats:
 - **The DoS rows are labelled `UNKNOWN`.** All of them come from the `Bluetooth_DoS_*.csv` source files, so they are relabelled to `DoS` (BLE) in M1.
-- **The feature space is different and much smaller.** There are 8 packet fields (`packet_length`, `inter_packet_gap`, `hci_type`, `hci_event_code`, `l2cap_length`, `cumulative_packet_count`, `timestamp`, …). `ble_access_addr` and `ble_pdu_type` are entirely empty. BLE therefore can't share the Wi-Fi model's 45-feature input. It needs either a **separate BLE edge model** for t4, or a protocol-specific client group in the federation.
+- **The feature space is different and much smaller.** There are 9 packet fields, 7 of them usable (`packet_length`, `inter_packet_gap`, `hci_type`, `hci_event_code`, `l2cap_length`, `cumulative_packet_count`, `timestamp`). `ble_access_addr` and `ble_pdu_type` are entirely empty. BLE therefore can't share the Wi-Fi model's 45-feature input. It needs either a **separate BLE edge model** for t4, or a protocol-specific client group in the federation.
 - Rows have real timestamps, which could support an actual chronological drift check for BLE.
 
 Wi-Fi bonus: the Zenodo parquet has **361k benign profiling rows labelled by device and scenario** (e.g. `Owltron_Camera_LAN_MIC`, `Active`, `Idle`). That gives real device identities for benign traffic, which can strengthen the device-based non-IID partition in M2. It also includes the official train/test split.
 
-The raw official release (pcaps plus Bluetooth CSVs) is at http://cicresearch.ca/IOTDataset/CICIoMT2024/. It sits behind a CIC registration form (name, email, organisation), which you have to fill in yourself if the raw data is needed.
+The raw official release (pcaps plus Bluetooth CSVs) is at http://cicresearch.ca/IOTDataset/CICIoMT2024/. It sits behind a CIC registration form (name, email, organisation), which a person has to fill in if the raw data is needed.
 
 ## Compute environment (local)
 
@@ -155,20 +169,48 @@ The raw official release (pcaps plus Bluetooth CSVs) is at http://cicresearch.ca
 
 ## Default design decisions (open questions from the proposal)
 
-The proposal ends with five open questions. Development proceeds with the defaults below. Change any of them here before M14.
+The proposal ends with five open questions. Development proceeds with the defaults below. Change any of them here before M14. D6 and D7 were added during the work.
 
 | # | Question | Default chosen | Rationale |
 |---|---|---|---|
 | D1 | Headline target | **6-class category** (`y_category`); 19-class and binary reported as secondary | Stable with tiny sub-classes |
-| D2 | D_pub composition | **Small stratified mix** (benign plus 1–2% per category), inputs only, labels hidden from distillation | More stable multiclass calibration; benign-only kept as an ablation |
+| D2 | D_pub composition | **Stratified mix, as the proposal specifies:** a fixed 5,000 benign rows plus 1% of each attack category (`dpub.attack_frac`, the low end of the proposal's 1–2%), inputs only, labels hidden from distillation. Rare classes get at least 50 rows, and no class gives up more than 5% | More stable multiclass calibration; benign-only kept as an ablation. Full pool: 90,429 rows, of which DDoS is 65% because each category gives the same share, so M7 must not let DDoS dominate. Sharing soft labels on all of it costs about 2.2 MB per client per round before compression |
 | D3 | LLM override | **Conservative override**: allowed only when there is high disagreement *and* a drift flag; always logged | Matches the proposal's risk mitigation |
 | D4 | Headline drift regime | **Attack-category introduction** (t0→t5); variant and population drift as secondary | Clear and class-incremental |
 | D5 | Privacy section | **Short analysis** of what is shared (soft labels on D_pub, drift stats, escalated evidence) | Low cost, expected by TNSM reviewers |
-| D6 | Shortcut features (added in M1) | **Exclude `IAT` (Wi-Fi) and `cumulative_packet_count` (BLE) from modelling**; BLE `timestamp` is never a feature. A with-IAT run is reported as sensitivity in M14 | `IAT` alone reaches 0.83 macro-F1, and its values (mean 8.5×10⁷, max 1.7×10⁸) look like timestamps rather than inter-arrival times. **M3 A/B (t1, dev):** adding IAT lifts macro-F1 from 0.820 to 0.9997 and DoS F1 from 0.615 to 0.999, so DoS vs DDoS becomes trivially separable. That is the signature of a capture-session shortcut, and it likely explains the near-perfect scores reported on this dataset. Toggle: `features.exclude_wifi` |
+| D6 | Shortcut features (added in M1) | **Exclude `IAT` (Wi-Fi) and `cumulative_packet_count` (BLE) from modelling**; BLE `timestamp` is never a feature. A with-IAT run is reported as sensitivity in M14 | `IAT` alone reaches 0.83 macro-F1, and its values (mean 8.5×10⁷, max 1.7×10⁸) look like timestamps rather than inter-arrival times. **M3 A/B (t1, dev):** adding IAT lifts macro-F1 from 0.826 to 0.9998 and DoS F1 from 0.627 to 1.000, so DoS vs DDoS becomes trivially separable. That is the signature of a capture-session shortcut. It may also explain near-perfect scores in published work on this dataset, which still has to be checked against those papers before the paper claims it. Evidence: [`reports/m3/dev/shortcut_checks.md`](reports/m3/dev/shortcut_checks.md). Toggle: `features.exclude_wifi` |
+| D7 | Benign profiling rows (added in M3/M4) | **Open.** They stay in train and test because they supply the real device identities, and every metric is reported both on all rows and on `csv_only` rows. **Proposed:** use `csv_only` as the headline | Profiling rows are perfectly separable from CSV benign rows and always classified correctly (fact 9). On the dev pool at t5, removing them from train and test drops benign F1 from 0.982 to 0.815 and macro-F1 from 0.883 to 0.853. Training on them also lowers recall on CSV benign rows from 0.948 to 0.899, which bears directly on the false-positive claim in H3. The dev pool over-represents them (about 3.7 profiling rows per CSV benign row, against about 1.6 on the full pool), so the full-pool numbers will decide this |
 
 ---
 
-## Planned repository layout
+## Hypotheses (from the proposal)
+
+| # | Hypothesis | Tested in | How |
+|---|---|---|---|
+| H1 | DA-FedDistill improves average macro-F1 across drift windows versus static and naïve incremental baselines, by reducing client overfitting and enabling cross-client knowledge transfer without weight sharing | M7, M14 | Window-averaged macro-F1 of E3 vs static (M3) and naïve incremental (M6) |
+| H2 | Drift-triggered adaptation (ADWIN) reduces time-to-recover after major shifts and stabilizes performance variance across windows | M9, M14 | E4 vs E3: time-to-recover and variance across windows |
+| H3 | Gated LLM verification reduces false positives during high-drift windows, especially protocol-related ones, with overhead controlled through the LLM-call rate | M11, M14 | E5 vs E3/E4: benign false-positive rate per window on `csv_only` rows; LLM calls per 1k samples |
+| H4 | SHAP + LLM explanations give more actionable operator-facing narratives than SHAP alone, when constrained to SHAP-grounded evidence and stored for audit | M11, M14 | The proposal gives no measure, so this plan adds one: see M14 |
+
+## Experiment matrix (from the proposal)
+
+| Group | FL collaboration | Drift adaptation | Feature selection | LLM verification | XAI | Question |
+|---|---|---|---|---|---|---|
+| E1 | None (centralized) | None | None | None | None | Upper bound without constraints |
+| E2 | FedAvg (MLP) | None vs incremental | None | None | SHAP optional | Comparison with classic FL weight averaging |
+| E3 | DA-FedDistill | Incremental + rehearsal | None | None | SHAP | Does distillation FL improve drift robustness? |
+| E4 | DA-FedDistill | Drift-triggered schedule (ADWIN) | MI-driven top-K | None | SHAP | Does drift-aware feature focus stabilize models? |
+| E5 | DA-FedDistill | As E4 | As E4 | Gated (uncertain only) | SHAP + LLM | Can LLM verification improve precision and reduce FPs under drift? |
+| E6 | DA-FedDistill | As E4 | As E4 | Always-on vs gated | SHAP + LLM | Cost–accuracy frontier |
+| E7 | Federated GBDT (if feasible) | Incremental | None | None | SHAP | How close can "true" federated boosting get? |
+
+Other baselines: static (t0 only), FedProx + MLP, and FedMD-style distillation. The ablations are listed under M14.
+
+---
+
+## Repository layout
+
+Directories marked *(planned)* are still empty.
 
 ```
 IDS-code/
@@ -177,27 +219,27 @@ IDS-code/
 ├── configs/
 │   ├── default.yaml              # paths, seeds, τc, τd, K, window/client settings
 │   ├── env/{local,kaggle}.yaml   # environment profiles (paths/resources only)
-│   └── experiments/E1..E7.yaml
-├── data/
+│   └── experiments/              # (planned) E1..E7.yaml
+├── data/                         # untracked
 │   ├── raw/                      # ciciomt2024_full_8p7m.csv (original Wi-Fi/MQTT CSV)
 │   ├── external/zenodo_19452870/ # Zenodo derivative: BLE + Wi-Fi parquet (see External data)
-│   ├── processed/                # parquet, float32
-│   └── splits/                   # window_definition.json, client_partitions.json, dpub.parquet
+│   ├── processed/                # data_manifest.json + 4 parquet files; all Kaggle needs
+│   └── splits/<pool>/<timeline>/ # assignments, dpub, ble_assignments, window_definition, client_partitions, counts
 ├── src/ids/
-│   ├── data/          # ingest, clean, labels
-│   ├── partition/     # timeline, clients, D_pub
-│   ├── models/        # xgb, lgbm, fusion, calibration, mlp
-│   ├── drift/         # adwin, psi/kl/wasserstein, gate
-│   ├── fl/            # rehearsal, da_feddistill, fedavg, fedprox, fed_gbdt
-│   ├── xai/           # shap local/global, store
-│   ├── llm/           # backend, prompts, schema, verifier, policy agent
-│   ├── eval/          # metrics, forgetting, time-to-recover, latency, comm cost
-│   └── utils/         # seeding, logging (JSONL), config
+│   ├── data/          # schema (labels), ingest, sample, external, io
+│   ├── partition/     # timeline, allocate, build (clients, D_pub, BLE), io
+│   ├── models/        # edge (XGB + LGBM, fusion, calibration, save/load, latency); later mlp
+│   ├── eval/          # metrics, drift_metrics, system, harness, plots
+│   ├── drift/         # (planned) adwin, psi/kl/wasserstein, gate
+│   ├── fl/            # (planned) rehearsal, da_feddistill, fedavg, fedprox, fed_gbdt
+│   ├── xai/           # (planned) shap local/global, store
+│   ├── llm/           # (planned) backend, prompts, schema, verifier, policy agent
+│   └── utils/         # seed, jsonl, config, run
 ├── scripts/                      # CLI entry points per milestone
-├── notebooks/                    # kaggle_bootstrap.ipynb; later Notebook A (train/FL) and B (inference/LLM/XAI)
+├── notebooks/                    # kaggle_bootstrap, m3_kaggle (M3 + M4); later Notebook A (train/FL) and B (inference/LLM/XAI)
 ├── tests/
 ├── reports/m<k>/                 # tracked milestone reports (EDA, figures, manifests)
-└── results/runs/<run_id>/        # untracked: config snapshot, metrics, logs
+└── results/runs/<run_id>/        # untracked: config snapshot, metrics, logs, models
 ```
 
 ---
@@ -220,7 +262,7 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 - `pytest`: **6 passed** (config layering/overrides, Kaggle profile, override parsing, seed determinism, JSONL append, run snapshots).
 - `scripts/m0_smoke_run.py` (local) wrote `results/runs/<ts>_m0_smoke/` containing `experiment_config.json`, `environment.json`, `events.jsonl`, `run.log` and `data_check.json`. Both the raw CSV and the Zenodo folder were found.
 - Decision: dependencies are declared as **lower bounds** in `pyproject.toml`, not pinned, and Kaggle installs with `--no-deps`. Forcing exact pins would reinstall Kaggle's preinstalled stack, which can break the image. Exact versions are recorded per run in `environment.json` instead.
-- Not yet verified: the Kaggle side of the bootstrap. It runs on your first Kaggle session, after you upload the private dataset.
+- Not yet verified on Kaggle itself: the bootstrap. A simulated session passed on 2026-11-04 (fresh GitHub clone, `--env kaggle`, only the five processed files under a nested input folder); the real one runs after the private dataset is uploaded.
 
 ### M1: Data ingestion, cleaning & label harmonization
 **Goal:** a fast, memory-safe, auditable processed dataset.
@@ -259,21 +301,21 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
   | t5 | all + Recon OS-Scan/VulScan (variant drift) + client mix shift | compound drift |
 - [x] Device identity: instead of a clustering proxy, the **real Zenodo device captures** are used. Each of 21 device/network groups (e.g. `Owltron_Camera|WAN`) belongs to exactly one client; the network-wide captures (Active/ActiveBroker/Idle) are spread over all clients
 - [x] 15 clients (n_clients is configurable for the 10/20 sensitivity runs): Dirichlet(α=0.5) label skew per class, quantity skew emerges naturally; **population drift at t5**: 5 clients get re-drawn attack mixes and 5 held-back device groups are onboarded
-- [x] D_pub: fixed stratified subset (D2) of 17,913 rows, removed from all client/test data, tagged with `intro_window` so that M7 sees only classes introduced so far (`window_mode: cumulative`)
-- [x] Per-window, client-local held-out test sets (20% per window×class). Exact duplicates are dropped first, so train and test never share a row (your M2 decision)
+- [x] D_pub: fixed stratified subset (D2) of 90,429 rows, removed from all client/test data, tagged with `intro_window` so that M7 sees only classes introduced so far (`window_mode: cumulative`)
+- [x] Per-window, client-local held-out test sets (20% per window×class). Exact duplicates are dropped first, so train and test never share a row
 - [x] Alternate timeline `alt_order` (different family order, t5 = population drift only)
 - [x] BLE sub-federation: 3 clients joining at t4, official BLE train/test split, Dirichlet label skew
 - [x] Loader `ids.partition.io.load_rows(cfg, pool, timeline, windows, split, clients)` plus `load_dpub`, `load_ble_rows`
 - **Deliverables:** `window_definition.json`, `client_partitions.json`, `dpub.parquet`, partition statistics plots.
 - **Acceptance:** fully deterministic from the seed; the statistics show measurable non-IID skew (e.g. Jensen–Shannon divergence between client label distributions).
 
-**Results (2026-11-04)**
+**Results (2026-11-04; rebuilt the same day when D_pub changed to match the proposal)**
 - Run: `python scripts/m2_build_partitions.py` (~45 s for dev + full × 2 timelines). Reports: [`reports/m2/full/PARTITION.md`](reports/m2/full/PARTITION.md) (headline) and [`reports/m2/dev/PARTITION.md`](reports/m2/dev/PARTITION.md).
-- Full pool, headline: **9,110,630 assigned rows**, which reconciles exactly (8,775,013 CSV − 7,379 dups − 17,913 D_pub + 361,081 profiling − 172 profiling dups). Per window: t0 372k train / 93k test, t1–t5 1.31–1.45M train / 327–362k test.
-- Dev pool: 624,927 rows, D_pub 13,027, BLE 78,380, for fast local work.
-- Non-IID: mean client JSD vs window 0.17 (t0) → 0.20 (t5), range 0.07–0.33. Client size at t5 ranges 46k–226k.
-- **Deterministic:** rebuilding gives a byte-identical `assignments.parquet`. Loader cross-check: loaded features match the processed Parquet exactly.
-- Observation: because DDoS dominates the volume, newly introduced families are a **small slice** of their window (ARP-Spoofing ≈ 0.5% of t4 train, Recon-OS/VulScan < 1% of t5). This is realistic, and macro-F1 exposes it, but the later drift steps are subtle in accuracy terms. A per-window volume cap is an easy knob if M3/M4 show the drift signal is too weak.
+- Full pool, headline: **9,038,114 assigned rows**, which reconciles exactly (8,775,013 CSV − 7,379 dups − 90,429 D_pub + 361,081 profiling − 172 profiling dups). Per window: t0 370k train / 92k test, t1–t5 1.30–1.44M train / 324–359k test.
+- Dev pool: 631,431 rows, D_pub 6,523, BLE 78,380, for fast local work.
+- Non-IID: mean client JSD vs window 0.17 (t0) → 0.20 (t5), range 0.07–0.33. Client size at t5 ranges 33k–224k.
+- **Deterministic:** rebuilding gives a byte-identical `assignments.parquet`, `dpub.parquet` and `ble_assignments.parquet`, including from a fresh clone under the Kaggle profile. Loader cross-check: loaded features match the processed Parquet exactly.
+- Observation: because DDoS dominates the volume, newly introduced families are a **small slice** of their window (ARP-Spoofing 0.5% of t4 train, Recon-OS-Scan 1.1% and Recon-VulScan 0.2% of t5). This is realistic, and macro-F1 exposes it, but the later drift steps are subtle in accuracy terms. A per-window volume cap is an easy knob if the drift signal proves too weak.
 - Tests: 20 passing (`tests/test_partition.py`: timeline validation, allocation primitives, D_pub caps, row-disjointness, no class before its intro window, device single-ownership, onboarding window, determinism, BLE split).
 
 ### M3: Edge ensemble + centralized & static baselines
@@ -289,28 +331,49 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 - **Acceptance:** E1 and static results for every window are logged; calibration error (ECE) is reported before and after calibration.
 
 **Results, dev pool (2026-11-04)**: [`reports/m3/dev/RESULTS.md`](reports/m3/dev/RESULTS.md)
-- Run: `python scripts/m3_baselines.py --pool dev` (~2.5 min locally, deterministic: a re-run reproduces every number).
+- Run: `python scripts/m3_baselines.py --pool dev` (~3 min locally). Detection metrics reproduce byte for byte at the same thread count. A different thread count changes individual cells by at most 0.004 macro-F1 (window average unchanged at 0.891). Latency varies between runs.
 
-  | window | t0 | t1 | t2 | t3 | t4 | t5 | window avg |
-  |---|---:|---:|---:|---:|---:|---:|---:|
-  | E1 centralized macro-F1 | 1.000 | 0.820 | 0.862 | 0.888 | 0.890 | 0.883 | **0.891** |
-  | Static (t0 only) macro-F1 | 1.000 | 0.461 | 0.325 | 0.231 | 0.162 | 0.160 | **0.390** |
+  | window | t0 | t1 | t2 | t3 | t4 | t5 | window avg | avg excl. t0 |
+  |---|---:|---:|---:|---:|---:|---:|---:|---:|
+  | E1 centralized macro-F1 | 1.000 | 0.826 | 0.858 | 0.890 | 0.889 | 0.883 | **0.891** | 0.869 |
+  | Static (t0 only) macro-F1 | 1.000 | 0.463 | 0.319 | 0.226 | 0.159 | 0.154 | **0.387** | 0.264 |
 
-- **Drift effect confirmed.** Without updates the model degrades by 0.72 macro-F1 by t5, so the timeline gives a strong signal for M6–M9.
-- **The main error is DoS↔DDoS confusion** (20–25% each way; DoS F1 ≈ 0.62, DDoS ≈ 0.85), which the proposal anticipated. All other categories reach F1 ≥ 0.89 (benign 0.98, recon 0.96, MQTT 0.99, spoofing 0.89–0.93). See the IAT A/B under D6.
-- Components (diagonal mean): XGB 0.8901, LGBM 0.8897, fused 0.8905, calibrated 0.8905 macro-F1. **Calibration lowers ECE from 0.0187 to 0.0140.** The fusion weight varies by window (w_xgb 0.0–0.7).
-- Edge cost: t0 model 0.9 MB with batched inference at 3 µs/flow. The t5 model is **26 MB** (XGB 19 MB + LGBM 7 MB) at 22 µs/flow batched, with ~9.5 ms single-flow latency (dominated by Python call overhead). The size is high for a constrained gateway, so tree-count and depth limits get revisited in M9 (feature selection) and M14.
+- **Drift effect confirmed.** Without updates the model falls from 1.000 to 0.154 by t5, which is 0.73 below E1 at that window, so the timeline gives a strong signal for M6–M9.
+- **The perfect t0 score inflates both averages,** hence the extra column. Benign vs DoS is easy: `Number` alone gets 0.9995, but so do real packet-size features (`AVG` 0.985, `Tot_size` 0.984), and E1 still scores 0.9993 without `Number` and `Weight`. So this is mostly an easy first window, not only an artifact.
+- **The main error is DoS↔DDoS confusion** (20–26% each way; DoS F1 ≈ 0.63, DDoS ≈ 0.85), which the proposal anticipated. All other categories reach F1 ≥ 0.88 (benign 0.98, recon 0.96, MQTT 0.99, spoofing 0.88–0.93). See the IAT A/B under D6.
+- Components (diagonal mean): XGB 0.8903, LGBM 0.8900, fused 0.8910, calibrated 0.8910 macro-F1. **Calibration lowers ECE from 0.0168 to 0.0123.** The fusion weight varies by window (w_xgb 0.0–1.0).
+- Edge cost on 12 threads: t0 model 0.9 MB with batched inference at about 3 µs/flow. The t5 model is **27 MB** (XGB 20 MB + LGBM 7 MB) at about 25 µs/flow batched, with about 9–10 ms single-flow latency. M4 measures the same model on one thread at about 3 ms single-flow, so most of that latency is thread overhead. The size is high for a constrained gateway, so tree-count and depth limits get revisited in M9 (feature selection) and M14.
 - BLE: macro-F1 0.992–0.995, AUROC ≥ 0.999. BLE DoS is nearly trivially separable from packet-level fields.
+- Shortcut and data checks are tracked in [`reports/m3/dev/shortcut_checks.md`](reports/m3/dev/shortcut_checks.md) (`scripts/m3_shortcut_checks.py`): D6, dataset facts 8–9, D7.
 - **Pending:** the full-pool run on Kaggle (`notebooks/m3_kaggle.ipynb`). Its numbers will be added here as "Results, full pool".
-- Tests: 25 passing (`tests/test_edge.py`: global label space with absent classes, binary mode, persistence, temperature/ECE, balanced weights, present-class macro metrics).
+- Tests: 25 passing at the time (`tests/test_edge.py`: global label space with absent classes, binary mode, persistence, temperature/ECE, balanced weights, present-class macro metrics).
 
 ### M4: Evaluation harness & metrics
 **Goal:** one evaluator that every experiment reuses.
-- [ ] Detection: accuracy, macro-F1, per-class precision/recall, AUROC (binary), one-vs-rest AUC, confusion matrices per window and per client cluster
-- [ ] Drift robustness: window-averaged macro-F1, forgetting (max−final per class/task), time-to-recover (within ε)
-- [ ] System: edge latency, LLM latency (mean/P95), LLM calls per 1k samples, FL bytes/round, escalation payload bytes
-- [ ] Standard results table plus plot writers
+- [x] Detection: accuracy, macro-F1, per-class precision/recall, AUROC (binary), one-vs-rest AUC, confusion matrices per window and per client cluster (`eval/metrics.py`, `eval/harness.py`). Clusters: Ward linkage on client training label mix, since the proposal doesn't define them
+- [x] Drift robustness: window-averaged macro-F1 (with and without t0), forgetting (F_max − F_final per class and per window), time-to-recover within ε = 0.02 (`eval/drift_metrics.py`)
+- [x] System: edge latency for XGBoost, LightGBM and the fused ensemble on one thread, model size, tree counts and an upper bound on comparisons per flow (the proposal's stand-in for FLOPs), training time. Helpers ready and unit-tested for M7/M11: LLM latency (mean/P95), LLM calls per 1k samples, FL bytes/round, escalation payload bytes (`eval/system.py`)
+- [x] Standard results table plus plot writers (`eval/plots.py`, `scripts/m4_evaluate.py`)
+- [x] One predictor interface for shared and per-client models (`predict_global`, `predict_by_client`), so M6–M13 go through the same code; `EdgeEnsemble.load` for saved models
+- [x] Every metric on two slices: `all` and `csv_only` (D7)
 - **Acceptance:** M3 results are regenerated through the harness with identical numbers.
+
+**Results, dev pool (2026-11-04)**: [`reports/m4/dev/EVALUATION.md`](reports/m4/dev/EVALUATION.md)
+- Run: `python scripts/m4_evaluate.py --pool dev` (~1 min). It reloads every saved M3 model and stops with an error if any number disagrees with what M3 logged.
+- **Acceptance passed, twice.** M3 moved onto the harness reproduces its `results.csv` **byte for byte** (160 rows). Reloaded models match the logged numbers to within 5×10⁻¹¹, which is the rounding of the 10-decimal JSON log.
+
+  | method | slice | window avg | avg excl. t0 | final (t5) | class forgetting |
+  |---|---|---:|---:|---:|---:|
+  | E1 | all rows | 0.8910 | 0.8692 | 0.8827 | 0.0290 |
+  | E1 | CSV rows only | 0.8844 | 0.8612 | 0.8632 | 0.0370 |
+  | Static | all rows | 0.3867 | 0.2641 | 0.1537 | n/a |
+  | Static | CSV rows only | 0.3460 | 0.2152 | 0.0779 | n/a |
+
+- **Time to recover:** E1 recovers within one update at t2–t5. It never gets back to its t1 reference, because that reference is the perfect t0 score, so comparisons in M7/M9 should focus on t2–t5. Static never recovers. These are the reference points for H2.
+- **Client clusters:** at t5, cluster macro-F1 ranges from 0.857 to 0.906.
+- **Edge cost, one thread:** t5 ensemble about 3 ms single-flow and about 100 µs/flow batched. Up to 1,800 XGBoost + 1,038 LightGBM trees, at most 24,780 comparisons per flow, 27 MB.
+- **Pending:** the full-pool report, produced by the same Kaggle notebook as M3.
+- Tests: 39 passing (`tests/test_eval.py`: forgetting, time-to-recover including static and late updates, one-vs-rest AUC, per-client routing, slices, aliases, identical predictions after save/load, thread pinning, system accounting).
 
 ### M5: Drift detection & uncertainty gate
 **Goal:** the signals that drive escalation and adaptation.
@@ -325,6 +388,7 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 - [ ] Incremental update: XGBoost continued boosting (`xgb_model=`) and LightGBM `init_model` (refit); compare with retraining from scratch
 - [ ] Bounded rehearsal buffer (reservoir or class-balanced) with a configurable size
 - [ ] Local-only baseline (no collaboration) under the timeline
+- [ ] Naïve incremental baseline (no collaboration, no rehearsal), which H1 compares against
 - **Acceptance:** forgetting with rehearsal is below forgetting without it; the buffer stays within its memory budget.
 
 ### M7: DA-FedDistill (proposed federated distillation)
@@ -332,9 +396,10 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 - [ ] Per window: local incremental update → soft predictions on D_pub → cloud aggregation (mean or reliability-weighted) → pseudo-labels
 - [ ] Global calibrator `g_t(p_xgb, p_lgbm, drift_features) → p_global` (e.g. logistic regression or a small MLP)
 - [ ] Send calibrator parameters and thresholds back; clients apply them at inference
-- [ ] Communication accounting (bytes per round)
+- [ ] Keep DDoS from dominating the aggregation and calibrator, since it is 65% of D_pub (D2): class-balanced weights on D_pub rows, compared with unweighted
+- [ ] Communication accounting (bytes per round, rounds), including compressing soft labels
 - [ ] Also run the plain FedMD-style distillation baseline
-- **Acceptance:** E3 is better than local-only, and its window-averaged macro-F1 is compared with E1 and static (tests H1).
+- **Acceptance:** E3 is better than local-only, and its window-averaged macro-F1 is compared with E1, static and naïve incremental (tests H1).
 
 ### M8: Neural FL baselines (FedAvg / FedProx MLP)
 **Goal:** the classic FL references (E2).
@@ -386,7 +451,9 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 - [ ] E1–E7 across ≥3 seeds (mean ± std)
 - [ ] Ablations: no ADWIN, no feature selection, no rehearsal, no LLM verification, LLM always-on vs gated, SHAP-only vs SHAP+LLM explanations, D_pub benign-only
 - [ ] Sensitivity: 10/15/20 clients, Dirichlet α, τc/τd, alternate timelines
+- [ ] Sensitivity to suspect features and rows: with IAT (D6), without `Number`/`Weight` (fact 8), without profiling rows (D7)
 - [ ] Hypotheses H1–H4 evaluated, with statistical tests
+- [ ] H4 measure, proposed here because the proposal gives none: (a) groundedness, the share of LLM reasons citing a feature that really is in that sample's top-k SHAP with the right sign; (b) schema-valid rate; (c) a fixed rubric scoring SHAP-only and SHAP+LLM explanations on a blinded sample for whether they name a concrete operator action. Rubric and scorers need settling before M11 outputs are read
 - **Acceptance:** all tables and figures are regenerated by one script from logged runs.
 
 ### M15: Reproducibility package & paper artifacts
@@ -394,7 +461,7 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 - [ ] Kaggle Notebook A (prep + FL simulation) and Notebook B (inference + LLM + XAI)
 - [ ] Released configs: `experiment_config.json`, `client_partitions.json`, `window_definition.json`, `model_hparams.json`, LLM JSONL logs
 - [ ] Figures/tables mapped to the IEEE IoT-J outline; privacy/threat-model section (D5)
-- **Acceptance:** a fresh environment reproduces the headline table within ±0.5 macro-F1.
+- **Acceptance:** a fresh environment reproduces the headline table within ±0.005 macro-F1. A different thread count alone already moves individual cells by up to 0.004 (measured in M4), so the check must not demand exact equality.
 
 ---
 
@@ -408,3 +475,5 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 | 2026-11-04 | M1 ✅ | Data prep done: 8.78M rows → 249 MB Parquet (lossless, fixed label codes), dev sample 568k, BLE relabelled, 42 device-profiling captures extracted. EDA found the IAT/timestamp shortcut features → new decision D6 (exclude IAT by default). Only `Drate` is constant; 7,379 duplicates with no label conflicts. 13 tests pass. |
 | 2026-11-04 | M2 ✅ | Partitions built (dev + full, headline + alt timeline): 15 Dirichlet non-IID clients with real device ownership, population drift at t5, D_pub 17.9k, BLE 3-client sub-federation from t4. Duplicates dropped before splitting. Deterministic (byte-identical rebuild). 20 tests pass. |
 | 2026-11-04 | M3 ✅ (dev) | Edge ensemble (XGB+LGBM, fixed 6-class space, val-tuned fusion + temperature). Dev pool: E1 window-avg macro-F1 0.891 vs static 0.390 (static falls to 0.16 by t5). Main error: DoS↔DDoS. IAT A/B shows IAT makes DoS/DDoS trivially separable (0.82→0.9997), which supports D6. BLE 0.99. Kaggle notebook for the full pool added. 25 tests pass. |
+| 2026-11-04 | D2 change | README audit against the repo and the proposal. D_pub now follows the proposal (5,000 benign + 1% of each attack category: 90,429 rows, was 17,913), so M2 was rebuilt and M3 rerun on dev: E1 0.891 and static 0.387 window-average. Corrected figures, added hypotheses, experiment matrix, data source, full Quickstart. Reproduction tolerance fixed from ±0.5 to ±0.005 macro-F1. |
+| 2026-11-04 | M4 ✅ (dev) | Shared evaluation harness: detection metrics including one-vs-rest AUC, confusion per window and client cluster, forgetting, time-to-recover, per-component latency, model cost. M3 reproduced byte for byte through it, and reloaded models match the logged numbers. New findings: `Number`/`Weight` look like aggregation artifacts but barely matter; benign profiling rows are perfectly separable and inflate benign F1, so all metrics are now also reported without them (D7, open). 39 tests pass. |
