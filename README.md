@@ -52,8 +52,8 @@ Rules:
 | M0  | Project scaffolding & environment                  | Reproducibility design        | ✅ Done | 2026-11-04 |
 | M1  | Data ingestion, cleaning & label harmonization     | Dataset preparation 1–4       | ✅ Done | 2026-11-04 |
 | M2  | Synthetic drift timeline, clients & D_pub          | Time windows, client sim, D_pub | ✅ Done | 2026-11-04 |
-| M3  | Edge ensemble + centralized/static baselines       | Edge model, E1, static baseline | ✅ Done (dev) · full-pool run pending on Kaggle | 2026-11-04 |
-| M4  | Evaluation harness & metrics                       | Evaluation metrics            | ✅ Done (dev) · full-pool run pending on Kaggle | 2026-11-04 |
+| M3  | Edge ensemble + centralized/static baselines       | Edge model, E1, static baseline | ✅ Done (dev) · full pool provisional, final Kaggle rerun pending | 2026-11-04 |
+| M4  | Evaluation harness & metrics                       | Evaluation metrics            | ✅ Done (dev) · full pool provisional, final Kaggle rerun pending | 2026-11-04 |
 | M5  | Drift detection & uncertainty gate                 | ADWIN, PSI/KL/W, gate τc/τd   | ⬜ Not started | — |
 | M6  | Incremental local learning + rehearsal buffer      | DA-FedDistill step 1          | ⬜ Not started | — |
 | M7  | DA-FedDistill (federated distillation)             | E3, novelty claim B           | ⬜ Not started | — |
@@ -110,7 +110,15 @@ Three loops: the **inference loop** (edge to cloud escalation), the **adaptation
 
 ## Dataset facts (measured from `data/raw/ciciomt2024_full_8p7m.csv`)
 
-Source file: `ciciomt2024_full_8p7m.csv`, SHA-256 `f7cb6fe30c4e4f0cb415a5e888f9bfcc7a652189a094447c72b8428b6b8f0eb6`. The proposal names the Kaggle dataset [cyberdeeplearning/ciciomt2024](https://www.kaggle.com/datasets/cyberdeeplearning/ciciomt2024) as the distribution channel. **To confirm:** whether this merged file came from there.
+Source file: `ciciomt2024_full_8p7m.csv`, SHA-256 `f7cb6fe30c4e4f0cb415a5e888f9bfcc7a652189a094447c72b8428b6b8f0eb6`. It was **merged by the project author from the CICIoMT2024 Wi-Fi/MQTT attack CSV files**, published by the Canadian Institute for Cybersecurity ([dataset page](https://www.unb.ca/cic/datasets/iomt-dataset-2024.html); Dadkhah et al., *Internet of Things* 28, 2024, DOI [10.1016/j.iot.2024.101351](https://doi.org/10.1016/j.iot.2024.101351)).
+
+Cross-check (2026-11-04), against the independent [Zenodo derivative](https://zenodo.org/records/19452870):
+- **Row count:** 8,775,013, the exact number of flow records that record gives for the raw dataset.
+- **Features:** every CSV row is in Zenodo's train + test tables and every such Zenodo row is in the CSV, compared on all 45 features by row hash at full float64 precision. Both hold the same 8,767,634 unique rows.
+- **Labels:** the 19 CSV labels map one-to-one onto Zenodo's labels, with no disagreement on any row.
+- **Coverage and order:** all 72 source files are represented. The CSV is one block for the official train split (19 classes; 7.16M rows) followed by one for the official test split (19 classes; 1.61M rows).
+
+The official release itself sits behind a registration form and wasn't compared directly, so this shows agreement with a second, independently published copy. The merge also dropped the official train/test split, though it can be recovered from the row order. M2 re-splits at random instead; M14 tests the official split as a sensitivity run.
 
 - **8,775,013 rows × 47 columns**: 45 numeric flow features plus `Sub_Attack` and `Major_Label`.
 - **19 fine-grained classes** (Benign + 18 attacks) in **6 categories**:
@@ -179,7 +187,7 @@ The proposal ends with five open questions. Development proceeds with the defaul
 | D4 | Headline drift regime | **Attack-category introduction** (t0→t5); variant and population drift as secondary | Clear and class-incremental |
 | D5 | Privacy section | **Short analysis** of what is shared (soft labels on D_pub, drift stats, escalated evidence) | Low cost, expected by TNSM reviewers |
 | D6 | Shortcut features (added in M1) | **Exclude `IAT` (Wi-Fi) and `cumulative_packet_count` (BLE) from modelling**; BLE `timestamp` is never a feature. A with-IAT run is reported as sensitivity in M14 | `IAT` alone reaches 0.83 macro-F1, and its values (mean 8.5×10⁷, max 1.7×10⁸) look like timestamps rather than inter-arrival times. **M3 A/B (t1, dev):** adding IAT lifts macro-F1 from 0.826 to 0.9998 and DoS F1 from 0.627 to 1.000, so DoS vs DDoS becomes trivially separable. That is the signature of a capture-session shortcut. It may also explain near-perfect scores in published work on this dataset, which still has to be checked against those papers before the paper claims it. Evidence: [`reports/m3/dev/shortcut_checks.md`](reports/m3/dev/shortcut_checks.md). Toggle: `features.exclude_wifi` |
-| D7 | Benign profiling rows (added in M3/M4) | **Open.** They stay in train and test because they supply the real device identities, and every metric is reported both on all rows and on `csv_only` rows. **Proposed:** use `csv_only` as the headline | Profiling rows are perfectly separable from CSV benign rows and always classified correctly (fact 9). On the dev pool at t5, removing them from train and test drops benign F1 from 0.982 to 0.815 and macro-F1 from 0.883 to 0.853. Training on them also lowers recall on CSV benign rows from 0.948 to 0.899, which bears directly on the false-positive claim in H3. The dev pool over-represents them (about 3.7 profiling rows per CSV benign row, against about 1.6 on the full pool), so the full-pool numbers will decide this |
+| D7 | Benign profiling rows (added in M3/M4) | **Open.** They stay in train and test because they supply the real device identities, and every metric is reported both on all rows and on `csv_only` rows. **Proposed:** use `csv_only` as the headline | Profiling rows are perfectly separable from CSV benign rows and always classified correctly (fact 9). On the dev pool at t5, removing them from train and test drops benign F1 from 0.982 to 0.815 and macro-F1 from 0.883 to 0.853. Training on them also lowers recall on CSV benign rows from 0.948 to 0.899, which bears directly on the false-positive claim in H3. The dev pool over-represents them (about 3.7 profiling rows per CSV benign row, against about 1.6 on the full pool). **Full pool, provisional, same models scored both ways:** window-average macro-F1 0.891 → 0.889, t5 macro-F1 0.872 → 0.867, t5 benign F1 0.984 → 0.954, t5 benign recall 0.983 → 0.951. The effect on macro-F1 is small, but it is about three points on benign metrics |
 
 ---
 
@@ -262,7 +270,7 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 - `pytest`: **6 passed** (config layering/overrides, Kaggle profile, override parsing, seed determinism, JSONL append, run snapshots).
 - `scripts/m0_smoke_run.py` (local) wrote `results/runs/<ts>_m0_smoke/` containing `experiment_config.json`, `environment.json`, `events.jsonl`, `run.log` and `data_check.json`. Both the raw CSV and the Zenodo folder were found.
 - Decision: dependencies are declared as **lower bounds** in `pyproject.toml`, not pinned, and Kaggle installs with `--no-deps`. Forcing exact pins would reinstall Kaggle's preinstalled stack, which can break the image. Exact versions are recorded per run in `environment.json` instead.
-- Not yet verified on Kaggle itself: the bootstrap. A simulated session passed on 2026-11-04 (fresh GitHub clone, `--env kaggle`, only the five processed files under a nested input folder); the real one runs after the private dataset is uploaded.
+- Kaggle: the first real session (M3, commit `a27f725`, Python 3.13, 4 vCPU) completed on 2026-11-04. A simulated session for the current notebook also passed (fresh GitHub clone, `--env kaggle`, only the five processed files under a nested input folder).
 
 ### M1: Data ingestion, cleaning & label harmonization
 **Goal:** a fast, memory-safe, auditable processed dataset.
@@ -345,7 +353,19 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 - Edge cost on 12 threads: t0 model 0.9 MB with batched inference at about 3 µs/flow. The t5 model is **27 MB** (XGB 20 MB + LGBM 7 MB) at about 25 µs/flow batched, with about 9–10 ms single-flow latency. M4 measures the same model on one thread at about 3 ms single-flow, so most of that latency is thread overhead. The size is high for a constrained gateway, so tree-count and depth limits get revisited in M9 (feature selection) and M14.
 - BLE: macro-F1 0.992–0.995, AUROC ≥ 0.999. BLE DoS is nearly trivially separable from packet-level fields.
 - Shortcut and data checks are tracked in [`reports/m3/dev/shortcut_checks.md`](reports/m3/dev/shortcut_checks.md) (`scripts/m3_shortcut_checks.py`): D6, dataset facts 8–9, D7.
-- **Pending:** the full-pool run on Kaggle (`notebooks/m3_kaggle.ipynb`). Its numbers will be added here as "Results, full pool".
+
+**Results, full pool, provisional (2026-11-04)**: [`reports/m3/full_old_dpub/RESULTS.md`](reports/m3/full_old_dpub/RESULTS.md)
+- Kaggle run at commit `a27f725`, **before D_pub changed**: it used the 17,913-row D_pub, so these rows differ slightly from the current partition. 75 min on 4 vCPU.
+
+  | window | t0 | t1 | t2 | t3 | t4 | t5 | window avg | avg excl. t0 |
+  |---|---:|---:|---:|---:|---:|---:|---:|---:|
+  | E1 centralized macro-F1 | 1.000 | 0.831 | 0.867 | 0.894 | 0.883 | 0.872 | **0.891** | 0.869 |
+  | Static (t0 only) macro-F1 | 1.000 | 0.463 | 0.336 | 0.263 | 0.212 | 0.208 | **0.414** | 0.296 |
+
+- The dev pool predicted these well: window average 0.891 on both for E1, 0.387 vs 0.414 for static.
+- Where the full pool differs: accuracy is lower (t5 0.817 vs 0.884), because DDoS and DoS dominate its test rows and they are the confused pair. Spoofing F1 is weaker (t5 0.805 vs 0.881).
+- Calibration lowers ECE from 0.0241 to 0.0181. The t5 model is 33 MB, with 93.7 µs/flow batched on 4 vCPU. BLE: macro-F1 0.992–0.994, AUROC 0.9998.
+- **Pending:** the final rerun on the current partition (`notebooks/m3_kaggle.ipynb`), which will write `reports/m3/full/`.
 - Tests: 25 passing at the time (`tests/test_edge.py`: global label space with absent classes, binary mode, persistence, temperature/ECE, balanced weights, present-class macro metrics).
 
 ### M4: Evaluation harness & metrics
@@ -372,7 +392,16 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 - **Time to recover:** E1 recovers within one update at t2–t5. It never gets back to its t1 reference, because that reference is the perfect t0 score, so comparisons in M7/M9 should focus on t2–t5. Static never recovers. These are the reference points for H2.
 - **Client clusters:** at t5, cluster macro-F1 ranges from 0.857 to 0.906.
 - **Edge cost, one thread:** t5 ensemble about 3 ms single-flow and about 100 µs/flow batched. Up to 1,800 XGBoost + 1,038 LightGBM trees, at most 24,780 comparisons per flow, 27 MB.
-- **Pending:** the full-pool report, produced by the same Kaggle notebook as M3.
+- **Full pool, provisional:** [`reports/m4/full_old_dpub/EVALUATION.md`](reports/m4/full_old_dpub/EVALUATION.md). The saved Kaggle models were scored locally on a rebuild of their own partition from commit `a27f725`. The regression check passed on all 160 rows within 5×10⁻¹¹, across XGBoost 3.4.1 on Linux and 3.2 on Windows.
+
+  | method | slice | window avg | avg excl. t0 | final (t5) | class forgetting |
+  |---|---|---:|---:|---:|---:|
+  | E1 | all rows | 0.8912 | 0.8694 | 0.8723 | 0.0286 |
+  | E1 | CSV rows only | 0.8894 | 0.8673 | 0.8673 | 0.0310 |
+  | Static | all rows | 0.4135 | 0.2962 | 0.2082 | n/a |
+  | Static | CSV rows only | 0.4014 | 0.2817 | 0.1826 | n/a |
+
+- **Pending:** the final report on the current partition, produced by the same Kaggle notebook as M3.
 - Tests: 39 passing (`tests/test_eval.py`: forgetting, time-to-recover including static and late updates, one-vs-rest AUC, per-client routing, slices, aliases, identical predictions after save/load, thread pinning, system accounting).
 
 ### M5: Drift detection & uncertainty gate
@@ -452,6 +481,7 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 - [ ] Ablations: no ADWIN, no feature selection, no rehearsal, no LLM verification, LLM always-on vs gated, SHAP-only vs SHAP+LLM explanations, D_pub benign-only
 - [ ] Sensitivity: 10/15/20 clients, Dirichlet α, τc/τd, alternate timelines
 - [ ] Sensitivity to suspect features and rows: with IAT (D6), without `Number`/`Weight` (fact 8), without profiling rows (D7)
+- [ ] Sensitivity to the split: train on the official train block and test on the official test block, instead of M2's random split, to see whether mixing the official split inflates scores
 - [ ] Hypotheses H1–H4 evaluated, with statistical tests
 - [ ] H4 measure, proposed here because the proposal gives none: (a) groundedness, the share of LLM reasons citing a feature that really is in that sample's top-k SHAP with the right sign; (b) schema-valid rate; (c) a fixed rubric scoring SHAP-only and SHAP+LLM explanations on a blinded sample for whether they name a concrete operator action. Rubric and scorers need settling before M11 outputs are read
 - **Acceptance:** all tables and figures are regenerated by one script from logged runs.
@@ -477,3 +507,4 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 | 2026-11-04 | M3 ✅ (dev) | Edge ensemble (XGB+LGBM, fixed 6-class space, val-tuned fusion + temperature). Dev pool: E1 window-avg macro-F1 0.891 vs static 0.390 (static falls to 0.16 by t5). Main error: DoS↔DDoS. IAT A/B shows IAT makes DoS/DDoS trivially separable (0.82→0.9997), which supports D6. BLE 0.99. Kaggle notebook for the full pool added. 25 tests pass. |
 | 2026-11-04 | D2 change | README audit against the repo and the proposal. D_pub now follows the proposal (5,000 benign + 1% of each attack category: 90,429 rows, was 17,913), so M2 was rebuilt and M3 rerun on dev: E1 0.891 and static 0.387 window-average. Corrected figures, added hypotheses, experiment matrix, data source, full Quickstart. Reproduction tolerance fixed from ±0.5 to ±0.005 macro-F1. |
 | 2026-11-04 | M4 ✅ (dev) | Shared evaluation harness: detection metrics including one-vs-rest AUC, confusion per window and client cluster, forgetting, time-to-recover, per-component latency, model cost. M3 reproduced byte for byte through it, and reloaded models match the logged numbers. New findings: `Number`/`Weight` look like aggregation artifacts but barely matter; benign profiling rows are perfectly separable and inflate benign F1, so all metrics are now also reported without them (D7, open). 39 tests pass. |
+| 2026-11-04 | Data check, full pool | CSV provenance settled: merged by the author from the CICIoMT2024 CSVs, and it matches the Zenodo copy row for row on all features and labels. First Kaggle run came back (M3, 75 min) but predates the D_pub change, so its results are stored as provisional: E1 0.891 and static 0.414 window-average. Scored through M4: regression check passed; removing profiling rows costs 0.002 window-average macro-F1 and 0.03 t5 benign F1 on the full pool. Final Kaggle rerun pending. |
