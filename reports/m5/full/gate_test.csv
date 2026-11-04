@@ -1,0 +1,16 @@
+window,model,drift_flag,escalation_rate_all,escalation_rate,error_capture,error_rate_in_escalated,accuracy_not_escalated,unseen_class_capture
+t1,settled,no,0.1038,0.10767,0.25204,0.47284,0.83068,
+t1,before update,no,3e-05,2e-05,2e-05,0.66667,0.25883,2e-05
+t1,before update,yes,3e-05,2e-05,2e-05,0.66667,0.25883,2e-05
+t2,settled,no,0.09661,0.10016,0.26212,0.5319,0.83334,
+t2,before update,no,0.11149,0.11558,0.27671,0.51314,0.82471,0.5234
+t2,before update,yes,0.11521,0.11921,0.28013,0.50366,0.82482,0.52678
+t3,settled,no,0.08974,0.09282,0.24437,0.49396,0.84373,
+t3,before update,no,0.11753,0.12157,0.30831,0.64526,0.79965,0.46155
+t3,before update,yes,0.12398,0.12787,0.31337,0.62353,0.79968,0.46712
+t4,settled,no,0.08815,0.09116,0.23826,0.50087,0.83937,
+t4,before update,no,0.09044,0.09353,0.24602,0.5022,0.8412,0.25213
+t4,before update,yes,0.09044,0.09353,0.24602,0.5022,0.8412,0.25213
+t5,settled,no,0.08996,0.0936,0.25166,0.51048,0.84324,
+t5,before update,no,0.08746,0.091,0.23727,0.50236,0.83833,
+t5,before update,yes,0.08798,0.09153,0.23775,0.50047,0.83834,
