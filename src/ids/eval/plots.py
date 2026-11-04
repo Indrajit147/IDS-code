@@ -45,13 +45,18 @@ def fig_curves(series_by_label: dict, windows, path, title, ylabel="macro-F1 on 
     """Lines over the windows. A label may carry a (color slot, dashed?) style via a tuple key."""
     x = np.arange(len(windows))
     fig, ax = plt.subplots(figsize=(7, 3.4))
+    ends = sorted((s.iloc[-1], i) for i, s in enumerate(series_by_label.values()))
+    label_y, floor = {}, -1.0
+    for v, i in ends:                                    # keep end labels at least one line apart
+        floor = max(v, floor + 0.055)
+        label_y[i] = floor
     for i, (label, s) in enumerate(series_by_label.items()):
         slot, dashed = label[1] if isinstance(label, tuple) else (i, False)
         name = label[0] if isinstance(label, tuple) else label
         ax.plot(x, s.reindex(x).values, color=SERIES[slot], lw=2, ls="--" if dashed else "-", marker="o", ms=7,
                 markeredgecolor=SURFACE, markeredgewidth=2, label=name)
-        ax.annotate(f"{s.iloc[-1]:.2f}", (x[-1], s.iloc[-1]), xytext=(8, 0), textcoords="offset points",
-                    va="center", color=INK2)
+        ax.annotate(f"{s.iloc[-1]:.2f}", (x[-1], label_y[i]), xytext=(8, 0), textcoords="offset points",
+                    va="center", color=INK2, annotation_clip=False)
     ax.set_xticks(x, windows); ax.set_ylim(0, 1.05); ax.set_ylabel(ylabel)
     ax.grid(axis="y", color=GRID, lw=0.6); ax.set_axisbelow(True)
     ax.legend(frameon=False, loc="lower left")
