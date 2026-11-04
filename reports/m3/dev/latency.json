@@ -1,18 +1,18 @@
 {
   "t0": {
-    "single_ms_p50": 8.249949984019622,
-    "single_ms_p95": 9.958510025171563,
+    "single_ms_p50": 7.5182500295341015,
+    "single_ms_p95": 8.965254979557358,
     "batch_rows": 10000,
-    "batch_us_per_row": 3.1961600005161017,
-    "xgb_bytes": 149743,
-    "lgb_bytes": 745298
+    "batch_us_per_row": 3.2391899963840842,
+    "xgb_bytes": 147069,
+    "lgb_bytes": 766231
   },
   "t5": {
-    "single_ms_p50": 9.298999997554347,
-    "single_ms_p95": 10.73095495812595,
+    "single_ms_p50": 9.894499991787598,
+    "single_ms_p95": 10.85075501468964,
     "batch_rows": 10000,
-    "batch_us_per_row": 24.981050001224503,
-    "xgb_bytes": 19071815,
-    "lgb_bytes": 7219342
+    "batch_us_per_row": 24.612680001882836,
+    "xgb_bytes": 19858940,
+    "lgb_bytes": 7095369
   }
 }

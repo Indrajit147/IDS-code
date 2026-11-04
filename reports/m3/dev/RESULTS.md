@@ -1,23 +1,23 @@
 # M3 results — edge ensemble baselines (`dev` pool)
 
-Run `20261104-013856_m3_baselines_dev`; target `y_category` (6 classes); timeline `category_intro`; 43 features (D6: IAT excluded).
+Run `20261104-142623_m3_baselines_dev`; target `y_category` (6 classes); timeline `category_intro`; 43 features (D6: IAT excluded).
 Model: XGBoost + LightGBM with balanced class weights (capped at 50), early stopping on a 10% stratified validation split, fusion weight chosen by validation log-loss, temperature-calibrated.
 
 ## E1 centralized vs static, on each window's own test set
 
 | window | new classes | E1 centralized macro-F1 | E1 accuracy | static macro-F1 | static accuracy | E1 n_train | w_xgb | T |
 |---|---|---:|---:|---:|---:|---:|---:|---:|
-| t0 | Benign, DoS-* | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 22,399 | 0.0 | 0.19 |
-| t1 | DDoS-* | 0.8203 | 0.8126 | 0.4613 | 0.3495 | 86,463 | 0.5 | 0.90 |
-| t2 | Recon-Port-Scan, Recon-Ping-Sweep | 0.8621 | 0.8223 | 0.3252 | 0.3312 | 154,048 | 0.7 | 0.81 |
-| t3 | MQTT-* | 0.8875 | 0.8614 | 0.2310 | 0.2581 | 240,776 | 0.6 | 0.83 |
-| t4 | ARP-Spoofing | 0.8901 | 0.8629 | 0.1621 | 0.2411 | 333,586 | 0.3 | 0.86 |
-| t5 | Recon-OS-Scan, Recon-VulScan | 0.8834 | 0.8837 | 0.1597 | 0.2645 | 449,958 | 0.3 | 0.89 |
+| t0 | Benign, DoS-* | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 22,628 | 0.0 | 0.14 |
+| t1 | DDoS-* | 0.8256 | 0.8170 | 0.4626 | 0.3517 | 86,930 | 0.4 | 0.96 |
+| t2 | Recon-Port-Scan, Recon-Ping-Sweep | 0.8582 | 0.8156 | 0.3193 | 0.3326 | 154,897 | 1.0 | 0.84 |
+| t3 | MQTT-* | 0.8902 | 0.8640 | 0.2263 | 0.2580 | 242,526 | 0.6 | 0.85 |
+| t4 | ARP-Spoofing | 0.8893 | 0.8633 | 0.1586 | 0.2406 | 336,493 | 0.4 | 0.87 |
+| t5 | Recon-OS-Scan, Recon-VulScan | 0.8827 | 0.8841 | 0.1537 | 0.2625 | 454,648 | 0.4 | 0.87 |
 
 - *E1 centralized* = retrained at every window on all clients' train data for windows 0..t (the upper bound).
 - *Static* = trained on t0 only and never updated, which quantifies drift degradation.
-- Window-averaged macro-F1: **E1 0.8905**, **static 0.3899**.
-- E1 macro-F1 on the cumulative test set (windows 0..t, row-weighted) per t: t0 1.0000, t1 0.8482, t2 0.8535, t3 0.8662, t4 0.8702, t5 0.8738.
+- Window-averaged macro-F1: **E1 0.8910**, **static 0.3867**.
+- E1 macro-F1 on the cumulative test set (windows 0..t, row-weighted) per t: t0 1.0000, t1 0.8516, t2 0.8527, t3 0.8674, t4 0.8711, t5 0.8735.
 
 ![static vs centralized](static_vs_centralized.png)
 
@@ -29,21 +29,21 @@ Each matrix row is one model (trained through window t) and each column is a win
 
 | variant | mean macro-F1 | mean accuracy | mean ECE |
 |---|---:|---:|---:|
-| xgb | 0.8901 | 0.8733 | 0.0163 |
-| lgb | 0.8897 | 0.8727 | 0.0183 |
-| fused | 0.8905 | 0.8738 | 0.0187 |
-| calibrated | 0.8905 | 0.8738 | 0.0140 |
+| xgb | 0.8903 | 0.8736 | 0.0166 |
+| lgb | 0.8900 | 0.8726 | 0.0174 |
+| fused | 0.8910 | 0.8740 | 0.0168 |
+| calibrated | 0.8910 | 0.8740 | 0.0123 |
 
 ## Per-class F1 of E1 on each window (— = class not yet present)
 
 | window | benign | ddos | dos | recon | mqtt | spoofing |
 |---|---:|---:|---:|---:|---:|---:|
 | t0 | 1.000 | — | 1.000 | — | — | — |
-| t1 | 1.000 | 0.846 | 0.615 | — | — | — |
-| t2 | 0.996 | 0.847 | 0.617 | 0.988 | — | — |
-| t3 | 0.987 | 0.849 | 0.625 | 0.980 | 0.995 | — |
-| t4 | 0.983 | 0.848 | 0.623 | 0.962 | 0.991 | 0.934 |
-| t5 | 0.984 | 0.852 | 0.625 | 0.962 | 0.989 | 0.889 |
+| t1 | 1.000 | 0.850 | 0.627 | — | — | — |
+| t2 | 0.994 | 0.840 | 0.612 | 0.986 | — | — |
+| t3 | 0.987 | 0.851 | 0.630 | 0.988 | 0.996 | — |
+| t4 | 0.984 | 0.847 | 0.627 | 0.955 | 0.991 | 0.932 |
+| t5 | 0.982 | 0.852 | 0.633 | 0.958 | 0.990 | 0.881 |
 
 ![confusion](confusion_last_window.png)
 
@@ -51,8 +51,8 @@ Each matrix row is one model (trained through window t) and each column is a win
 
 | model | single-flow P50 (ms) | P95 (ms) | batched (µs/flow) | XGB size (KB) | LGBM size (KB) |
 |---|---:|---:|---:|---:|---:|
-| trained through t0 | 8.25 | 9.96 | 3.20 | 150 | 745 |
-| trained through t5 | 9.30 | 10.73 | 24.98 | 19,072 | 7,219 |
+| trained through t0 | 7.52 | 8.97 | 3.24 | 147 | 766 |
+| trained through t5 | 9.89 | 10.85 | 24.61 | 19,859 | 7,095 |
 
 Measured on this machine's CPU (12 threads) with the full fused + calibrated ensemble. Single-flow latency includes Python call overhead.
 

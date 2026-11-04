@@ -1,0 +1,153 @@
+{
+  "run": "20261104-143022_m3_shortcut_checks_dev",
+  "pool": "dev",
+  "window": "t1",
+  "iat_ab": {
+    "without_iat": {
+      "n_features": 43,
+      "macro_f1": 0.8256154170810088,
+      "per_class_f1": {
+        "benign": 1.0,
+        "ddos": 0.8495787098853539,
+        "dos": 0.6272675413576726
+      }
+    },
+    "with_iat": {
+      "n_features": 44,
+      "macro_f1": 0.9998204354865918,
+      "per_class_f1": {
+        "benign": 1.0,
+        "ddos": 0.9998704159647531,
+        "dos": 0.9995908904950225
+      }
+    }
+  },
+  "t0_single_feature_macro_f1": {
+    "Number": 0.9995086373870388,
+    "AVG": 0.9853172709973232,
+    "Tot_size": 0.9840201916233279,
+    "Min": 0.9811287283736335,
+    "Variance": 0.9719282997399391,
+    "Header_Length": 0.9697128207751562,
+    "Tot_sum": 0.961843456132512,
+    "Max": 0.9564149988790255,
+    "Std": 0.9354132243763099,
+    "Srate": 0.8913944121787466,
+    "psh_flag_number": 0.7709977079577828,
+    "Magnitue": 0.7467375181809017,
+    "Rate": 0.7414476521407902,
+    "ack_flag_number": 0.7411071113540717,
+    "ack_count": 0.6700585260207783,
+    "UDP": 0.6418609608273926,
+    "Protocol_Type": 0.6192772111470586,
+    "Weight": 0.5882400211472376,
+    "rst_count": 0.5678072058524376,
+    "HTTPS": 0.560920794772248,
+    "TCP": 0.5602579867406898,
+    "ICMP": 0.5226138549576987,
+    "syn_flag_number": 0.5189833061250753,
+    "syn_count": 0.5106861158180271,
+    "Radius": 0.5034634822525451,
+    "Covariance": 0.46964554387077906,
+    "Duration": 0.44207685650570516,
+    "fin_count": 0.41455980542639514,
+    "ARP": 0.4115574608221667,
+    "IPv": 0.4115574608221667,
+    "LLC": 0.4115574608221667,
+    "rst_flag_number": 0.41033827964911473,
+    "DNS": 0.3981098307018949,
+    "fin_flag_number": 0.38843559562567825,
+    "HTTP": 0.38476795453782076,
+    "DHCP": 0.37071129800304653,
+    "ece_flag_number": 0.3686168073984721,
+    "cwr_flag_number": 0.3686168073984721,
+    "IGMP": 0.3686168073984721,
+    "Telnet": 0.2950947951278079,
+    "SMTP": 0.2950947951278079,
+    "SSH": 0.2950947951278079,
+    "IRC": 0.2950947951278079
+  },
+  "feature_and_source_checks": {
+    "0": {
+      "base": {
+        "macro_f1": 1.0,
+        "benign_f1": 1.0,
+        "benign_recall_by_source": {
+          "csv": 1.0,
+          "profiling": 1.0
+        }
+      },
+      "no_number_weight": {
+        "macro_f1": 0.9993448139536582,
+        "benign_f1": 0.9992351816443594,
+        "benign_recall_by_source": {
+          "csv": 0.9984202211690363,
+          "profiling": 1.0
+        }
+      },
+      "no_profiling": {
+        "macro_f1": 0.9986133563451685,
+        "benign_f1": 0.9976359338061466,
+        "benign_recall_by_source": {
+          "csv": 1.0
+        }
+      }
+    },
+    "1": {
+      "base": {
+        "macro_f1": 0.8256154170810088,
+        "benign_f1": 1.0,
+        "benign_recall_by_source": {
+          "csv": 1.0,
+          "profiling": 1.0
+        }
+      },
+      "no_number_weight": {
+        "macro_f1": 0.8254534406304521,
+        "benign_f1": 0.9990445251289891,
+        "benign_recall_by_source": {
+          "csv": 1.0,
+          "profiling": 1.0
+        }
+      },
+      "no_profiling": {
+        "macro_f1": 0.8249031040017685,
+        "benign_f1": 0.9992107340173638,
+        "benign_recall_by_source": {
+          "csv": 1.0
+        }
+      }
+    },
+    "5": {
+      "base": {
+        "macro_f1": 0.8826949017879188,
+        "benign_f1": 0.9822021116138763,
+        "benign_recall_by_source": {
+          "csv": 0.8988941548183255,
+          "profiling": 1.0
+        }
+      },
+      "no_number_weight": {
+        "macro_f1": 0.8838376061143602,
+        "benign_f1": 0.9820154727217925,
+        "benign_recall_by_source": {
+          "csv": 0.9036334913112164,
+          "profiling": 1.0
+        }
+      },
+      "no_profiling": {
+        "macro_f1": 0.8529616757845017,
+        "benign_f1": 0.8152173913043478,
+        "benign_recall_by_source": {
+          "csv": 0.9478672985781991
+        }
+      }
+    }
+  },
+  "benign_source": {
+    "n_csv": 19000,
+    "n_profiling": 71155,
+    "auc_all_features": 1.0,
+    "auc_no_number_weight": 1.0
+  }
+}
