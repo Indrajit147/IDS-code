@@ -57,7 +57,7 @@ Rules:
 | M3  | Edge ensemble + centralized/static baselines       | Edge model, E1, static baseline | ✅ Done (dev + full) | 2026-11-04 |
 | M4  | Evaluation harness & metrics                       | Evaluation metrics            | ✅ Done (dev + full) | 2026-11-04 |
 | M5  | Drift detection & uncertainty gate                 | ADWIN, PSI/KL/W, gate τc/τd   | ✅ Done (dev + full), acceptance partly met | 2026-11-04 |
-| M6  | Incremental local learning + rehearsal buffer      | DA-FedDistill step 1          | ✅ Done (dev), full pool pending | 2026-11-04 |
+| M6  | Incremental local learning + rehearsal buffer      | DA-FedDistill step 1          | ✅ Done (dev + full) | 2026-11-06 |
 | M7  | DA-FedDistill (federated distillation)             | E3, novelty claim B           | ⬜ Not started | — |
 | M8  | Neural FL baselines (FedAvg / FedProx MLP)         | E2, baselines                 | ⬜ Not started | — |
 | M9  | Drift-triggered updates + feature selection        | E4                            | ⬜ Not started | — |
@@ -466,7 +466,7 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 - [x] Bounded rehearsal buffer, class-balanced, with a configurable size (`fl/rehearsal.py`)
 - [x] Local-only baseline (no collaboration) under the timeline
 - [x] Naïve incremental baseline (no collaboration, no rehearsal), which H1 compares against
-- [ ] Full-pool run: `notebooks/m6_kaggle.ipynb` is ready but has not been run
+- [x] Full-pool run through `notebooks/m6_kaggle.ipynb` (one seed)
 - **Acceptance:** forgetting with rehearsal is below forgetting without it; the buffer stays within its memory budget.
 
 **Results, dev pool (2026-11-04)**: [`reports/m6/dev/INCREMENTAL.md`](reports/m6/dev/INCREMENTAL.md), [`reports/m6/dev/SEEDS.md`](reports/m6/dev/SEEDS.md)
@@ -486,6 +486,24 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 - **Rehearsal lowers forgetting but does not raise macro-F1.** All five methods sit within 0.001 of each other on window average, which is about the seed noise. Old classes recur with fresh rows in every later window of this timeline, so a client without a buffer keeps seeing them. Expect the M14 "remove rehearsal" ablation to show little on this timeline.
 - **Incremental matches retraining on macro-F1 at 38% of the fit time** (naïve vs retrain), but models keep growing and are 2.2× larger by t5.
 - **Local models beat centralized E1 by 0.028, and this is not like for like.** Nearly all of the gain is DDoS and DoS: at t5, DDoS F1 is 0.89 vs 0.85 and DoS 0.73 vs 0.63 (seed 42, retrain vs E1). These two are hard to separate from features, so a client model can lean on its own label mix. That explanation is likely but untested. It matters for M7: E3 must beat local-only, which starts from this advantage.
+
+**Results, full pool (2026-11-05, Kaggle)**: [`reports/m6/full/INCREMENTAL.md`](reports/m6/full/INCREMENTAL.md)
+- Run `20261105-160217_m6_incremental_full` at `67a2c81`, 4 threads, 2 h 38 min against the 4 h estimate (92 min fitting, the rest mostly evaluation). One seed, so differences below the dev seed noise (about 0.002 on forgetting) are not evidence. The run is marked `git_dirty`, as all the earlier Kaggle full runs are. That fits the notebook rebuilding M2 and rewriting tracked reports, but the run stores no diff, so this is not proven. The saved experiment settings match `configs/default.yaml`. CSV rows only:
+
+  | method | window avg | avg excl. t0 | final (t5) | class forgetting | fit time | model size at t5 |
+  |---|---:|---:|---:|---:|---:|---:|
+  | Naïve incremental | 0.9211 | 0.9054 | 0.8979 | 0.0240 | 769 s | 16.4 MB |
+  | Local + rehearsal (500) | 0.9208 | 0.9051 | 0.8963 | 0.0233 | 770 s | 16.9 MB |
+  | **Local + rehearsal (2,000)** | 0.9208 | 0.9051 | 0.8965 | **0.0217** | 786 s | 17.3 MB |
+  | Local + rehearsal (8,000) | 0.9208 | 0.9050 | 0.8967 | 0.0189 | 835 s | 17.9 MB |
+  | Retrain per client | 0.9205 | 0.9046 | 0.8930 | 0.0168 | 2,360 s | 6.5 MB |
+  | E1 centralized (M3) | 0.8897 | 0.8677 | 0.8668 | 0.0277 | | |
+  | Static centralized (M3) | 0.4024 | 0.2829 | 0.1840 | n/a | | |
+
+- **Acceptance met on this seed, narrowly at the default size.** Forgetting falls from 0.0240 to 0.0217 at 2,000 rows and 0.0189 at 8,000; the buffer stays at 2,000 rows and 360 kB. At 500 rows the gain (0.0007) is within noise.
+- **At 2,000 rows nearly all of the gain is one class.** Spoofing goes from 0.020 to 0.009, and the other five classes move by at most 0.001. Spoofing's t5 F1 is lower with the buffer (0.802 vs 0.812), so the buffer protects the intro-window test set without helping the current one. The largest forgetting, DoS at 0.078, barely moves at any buffer size.
+- **The dev findings hold.** Rehearsal doesn't move macro-F1 (all five within 0.0006 on window average). Incremental matches retraining at 33% of the fit time, with models 2.5× larger by t5.
+- **Local-only is the bar for E3, and it is high:** it beats E1 by 0.031. The gain is again mostly DDoS and DoS: at t5, DDoS F1 is 0.906 vs 0.852 and DoS 0.755 vs 0.634 (local + rehearsal vs E1). The label-mix explanation remains untested.
 
 **Choices the proposal leaves open (additions):**
 - LightGBM continues boosting through `init_model` instead of the `refit` this plan first named, since `refit` can't add a class.
@@ -583,3 +601,4 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 | 2026-11-04 | M5 ✅ (dev) | ADWIN (matches `river` on 40 synthetic streams), PSI/KL/Wasserstein per client, gate tuned on validation rows, drift registry. No false alarms in 93k shuffled rows; error rate caught at t1–t4. Main finding: the old model at t1 is confidently wrong and escalates nothing, while PSI sees the shift (new open decision D8). D7 decided: `csv_only` is the headline. Acceptance partly met; the Kaggle notebook now runs M3 to M5 in one go. |
 | 2026-11-04 | M3–M5 full pool | Final Kaggle run at `72001d4` (M3 51 min, M4 6 min, M5 7 min) replaces the provisional results. Headline, CSV rows only: E1 0.890 window-average and 0.867 at t5; static 0.402 and 0.184. M5: error-rate ADWIN catches all 33 affected clients with no false alarms in 1.45M rows; the gate is still blind at t1 (D8); PSI is weak after t1; the 10% budget catches 24% of errors. |
 | 2026-11-04 | M6 ✅ (dev) | Per-client continued boosting with a class-balanced buffer, over 3 seeds. Forgetting 0.035 naïve, 0.028 with 2,000 rows, 0.022 with 8,000; the buffer stays within budget, so acceptance is met on dev. Macro-F1 does not move (all 0.912–0.913), because old classes recur in this timeline. Local models beat E1 (0.884), mostly on DDoS/DoS, which is likely a client label-mix effect. Full-pool notebook ready, not yet run. 56 tests pass. |
+| 2026-11-06 | M6 full pool | Kaggle run at `67a2c81` (2 h 38 min, one seed). Forgetting 0.024 naïve, 0.022 with 2,000 rows, 0.019 with 8,000; the buffer stays within budget, so acceptance is met on this seed, though at 2,000 rows nearly all of the gain is Spoofing. Macro-F1 does not move (0.921). Local models beat E1 (0.890) by 0.031, mostly on DDoS/DoS. |
