@@ -88,6 +88,29 @@ class IncrementalEdge:
         # best_iteration counts the init model's rounds too; keep the trees up to it, so the next update continues from there
         return lgb.Booster(model_str=b.model_to_string(num_iteration=b.best_iteration))
 
+    def digest(self, X: np.ndarray, q: np.ndarray, weight: np.ndarray, rounds: int) -> "IncrementalEdge":
+        """FedMD's digest step: add trees that fit soft targets q on public rows.
+
+        Fusion weight and temperature stay as they were, since public rows carry no true labels to tune them on."""
+        c = self.cfg
+        w = np.asarray(weight, dtype=np.float32)
+
+        def soft_gradients(raw):
+            p = _softmax(raw)
+            return (p - q) * w[:, None], np.maximum(p * (1 - p), HESSIAN_FLOOR) * w[:, None]
+
+        xp = {k: v for k, v in c.xgb_params.items() if k != "n_estimators"}
+        xp = {"objective": "multi:softprob", "num_class": c.n_classes, "tree_method": "hist", "nthread": c.n_jobs,
+              "seed": c.seed, "base_score": 0.5, "min_child_weight": 1e-3, **xp}
+        self.xgb_ = xgb.train(xp, xgb.DMatrix(X, q.argmax(1)), rounds, xgb_model=self.xgb_,
+                              obj=lambda raw, _: soft_gradients(raw), verbose_eval=False)
+        lp = {k: v for k, v in c.lgb_params.items() if k != "n_estimators"}
+        lp = {"objective": lambda raw, _: soft_gradients(raw), "num_class": c.n_classes, "metric": "None",
+              "num_threads": c.n_jobs, "seed": c.seed, "verbose": -1, **lp}
+        b = lgb.train(lp, lgb.Dataset(X, q.argmax(1)), rounds, init_model=self.lgb_)
+        self.lgb_ = lgb.Booster(model_str=b.model_to_string())
+        return self
+
     def _raw(self, X) -> tuple[np.ndarray, np.ndarray]:
         return self.xgb_.predict(xgb.DMatrix(X)), _softmax(self.lgb_.predict(X, raw_score=True))
 

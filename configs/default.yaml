@@ -103,6 +103,12 @@ incremental:                       # M6; these budgets are assumptions, the prop
   rehearsal_capacity: 2000         # rows per client, class-balanced
   rehearsal_sweep: [500, 8000]
 
+distill:                           # M7; these settings are assumptions, the proposal sets none
+  calibrator_l2: 1.0e-4            # pull toward the plain geometric mean of the two boosters
+  calibrator_max_iter: 200
+  calibrator_max_rows: 200000      # (client, public row) pairs sampled to fit g_t
+  digest_trees: 10                 # FedMD baseline: rounds per client per window on the consensus
+
 eval:                              # M4
   recover_eps: 0.02                # time-to-recover: back within this of pre-drift macro-F1
   n_client_clusters: 3             # clusters of clients by training label mix

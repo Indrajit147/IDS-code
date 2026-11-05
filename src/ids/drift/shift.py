@@ -42,3 +42,12 @@ def feature_shift(ref: np.ndarray, cur: np.ndarray, names: list[str], n_bins: in
         rows.append({"feature": name, "psi": psi(p, q), "kl": kl(p, q),
                      "wasserstein": scaled_wasserstein(ref[:, j], cur[:, j])})
     return pd.DataFrame(rows)
+
+
+def psi_share(ref: np.ndarray, cur: np.ndarray, alert: float, n_bins: int = 10) -> float:
+    """Share of features whose PSI against the reference exceeds the alert level."""
+    over = 0
+    for j in range(ref.shape[1]):
+        edges = bin_edges(ref[:, j], n_bins)
+        over += psi(bin_shares(ref[:, j], edges), bin_shares(cur[:, j], edges)) > alert
+    return over / ref.shape[1]
