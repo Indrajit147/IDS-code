@@ -31,7 +31,9 @@ def main() -> None:
 
     t = ("| method | window avg | final (t5) | class forgetting | window avg minus local, per seed | final minus local, per seed |\n"
          "|---|---:|---:|---:|---:|---:|\n")
-    for m in runs[0]:
+    # a seed without M6's report has no naive_incremental row, so compare only what every run has
+    methods = [m for m in runs[0] if all(m in r for r in runs)]
+    for m in methods:
         da = ", ".join(f"{r[m]['window_avg_macro_f1'] - r[LOCAL]['window_avg_macro_f1']:+.4f}" for r in runs)
         df = ", ".join(f"{r[m]['final_macro_f1'] - r[LOCAL]['final_macro_f1']:+.4f}" for r in runs)
         t += f"| {m} | {stat(m, 'window_avg_macro_f1')} | {stat(m, 'final_macro_f1')} | {stat(m, 'mean_forgetting_by_class')} | {da} | {df} |\n"
