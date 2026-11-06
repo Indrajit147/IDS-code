@@ -55,3 +55,9 @@ def test_run_dir_snapshots(tmp_path):
     assert cfg_snap["seed"] == cfg["seed"]
     assert env_snap["packages"]["numpy"]
     assert events == ["run_start", "hello", "run_end"]
+
+
+def test_memory_note_reports_this_process():
+    from ids.utils.run import memory_note
+    note = memory_note()
+    assert "rss" in note and "GB" in note
