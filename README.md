@@ -65,7 +65,7 @@ Rules:
 | M6  | Incremental local learning + rehearsal buffer      | DA-FedDistill step 1          | ✅ Done (dev + full) | 2026-11-06 |
 | M7  | DA-FedDistill (federated distillation)             | E3, novelty claim B           | ✅ Done (dev + full); acceptance met on the full pool's window average only, two seeds | 2026-11-06 |
 | M8  | Neural FL baselines (FedAvg / FedProx MLP)         | E2, baselines                 | 🟨 Dev done (3 seeds); first full-pool run unstable, rerun with lr chosen on the full pool pending | — |
-| M9  | Drift-triggered updates + feature selection        | E4                            | ⬜ Not started | — |
+| M9  | Drift-triggered updates, feature selection, adaptive threshold | E4, Methodology Step 5 | ⬜ Not started | — |
 | M10 | SHAP explainability (local + global store)         | Novelty claim C               | ⬜ Not started | — |
 | M11 | Cloud LLM verifier (gated, JSON-constrained)       | E5, E6, novelty claim A       | ⬜ Not started | — |
 | M12 | LLM adaptation-policy agent (training decisions)   | "What changes through LLM reasoning" | ⬜ Not started | — |
@@ -102,6 +102,7 @@ flowchart LR
   H --> L[Verified label + rationale JSON]
   Edge -- soft labels on D_pub + drift stats --> G
   G -- calibration weights / thresholds --> Edge
+  F -- drift score, for an adaptive threshold (M9) --> Edge
   F <--> G
   F --> P
   S2 --> P
@@ -667,12 +668,22 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 - **FedAvg vs FedProx can't be read from this run.** FedProx at μ 0.01 gets 0.8340 ± 0.0025 and looks far ahead of FedAvg's 0.7165 ± 0.1558, but μ 0.001 and FedAvg fail at random, and μ 0.01 is too weak a pull for this to be clearly the proximal term at work. Even so, every stable pass is about 0.09 or more below E3 (0.9254).
 - **The fix:** `scripts/m8_lr_sweep.py` runs FedAvg at lr 0.003, 0.01, 0.03 and 0.1 on seeds 42 and 43, and takes the highest mean validation score over windows and seeds. The rule was fixed after seeing this run, but before any result at the other rates, and it reads no test rows. `notebooks/m8_kaggle.ipynb` then runs all passes at that rate.
 
-### M9: Drift-triggered updates + feature selection
-**Goal:** E4, drift-aware scheduling and feature focus.
+### M9: Drift-triggered updates, feature selection, adaptive threshold
+**Goal:** E4, drift-aware scheduling and feature focus, plus the gate's adaptive threshold.
 - [ ] Updates triggered by ADWIN instead of a fixed per-window schedule
 - [ ] Top-K features by mutual information per window (K sweep)
 - [ ] Sensitivity run (D8): a PSI-based drift flag in the gate against the proposal's rule, reported and not a headline
-- **Acceptance:** E4 vs E3 comparison of time-to-recover and performance variance (tests H2).
+- [ ] Drift score from cloud to edge (`Proposal explanation.docx`, Methodology Step 5: "The drift score is sent back to the edge so that an adaptive threshold can be used in the subsequent inference"): the cloud's ADWIN monitor turns each client's label-free ADWIN signals into a score, sent down with g_t and τ, and its bytes count in communication
+- [ ] Adaptive threshold: each client's τc and τd for the next window depend on its drift score, and a score of 0 gives exactly the fixed gate
+- [ ] Fixed against adaptive gate, on current-window and next-window rows: escalation rate, errors caught, accuracy on the rest, and whether it helps the t1 blind spot (D8), reported against the 10% target (D10)
+- **Acceptance:** E4 vs E3 comparison of time-to-recover and performance variance (tests H2), and the fixed vs adaptive gate comparison above.
+
+**Why the adaptive threshold is here (checked 2026-11-07).** Nothing built so far does this:
+- **M5:** ADWIN fires a hard flag that escalates the next 200 flows of a client. τc and τd don't change, and this exists only in M5's offline evaluation.
+- **M7:** the cloud re-picks τc and τd each window, on D_pub, for the escalation budget. They are one global pair and no drift score goes into the choice. M7's gate doesn't use a drift flag either.
+- **M7's drift features:** each client's PSI share is an input to g_t, so drift can move the probabilities and, through them, confidence. It doesn't move a threshold, and it is PSI, not the ADWIN score.
+
+**Choices the proposal leaves open (additions, to settle when M9 starts):** the proposal names the mechanism only, in that one sentence of the explanation document. The main proposal says the cloud sends "thresholds" and doesn't mention a drift score. So the score's definition, the rule from score to thresholds, and how strongly it acts are additions, and that strength is to be chosen on validation rows only. It may not help at t1, as the old model there is confidently wrong: its confidence would need a much higher τc, which would cost a lot of escalations. The comparison above reports what it does either way.
 
 ### M10: SHAP explainability
 **Goal:** two-tier explanations that are cheap enough to run.
@@ -752,3 +763,4 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 | 2026-11-06 | D8, D10 decided | The user asked for the recommended options. D8: the headline gate keeps the proposal's rule, and a PSI flag becomes a sensitivity run in M9. D10: 10% stays the headline operating point, as a tuning target and not a cap, with the frontier reported. The M6 comparison at full-pool seed 43 isn't needed. |
 | 2026-11-06 | M8 🟨 (dev) | FedAvg and FedProx on an MLP, 3 seeds. FedAvg 0.8156 and FedProx 0.8236 on window average, against E3 0.9125; 0.34 without updates. Acceptance met. Local-only is just as far ahead, so this doesn't isolate distillation as the cause. Lr 0.1 chosen on validation rows. Full-pool notebook ready, not yet run. 89 tests pass. |
 | 2026-11-07 | M8 full pool, first run | Kaggle at `285be6e`. Lr 0.1 from the dev sweep is unstable on the full pool: FedAvg 0.8267 and 0.6063 on window average across two seeds, collapsing on validation rows too. Kept in `reports/m8/full/lr0.1/`, not used as the result. Added a validation-only lr sweep on the full pool ahead of the final passes. |
+| 2026-11-07 | M9 plan extended | Checked whether the drift-score adaptive threshold (explanation document, Methodology Step 5) exists. It doesn't: M5 has a hard flag, and M7 re-picks one global τ pair without a drift score. Added to M9, with a fixed vs adaptive gate comparison in its acceptance. |
