@@ -109,6 +109,16 @@ distill:                           # M7; these settings are assumptions, the pro
   calibrator_max_rows: 200000      # (client, public row) pairs sampled to fit g_t
   digest_trees: 10                 # FedMD baseline: rounds per client per window on the consensus
 
+fedavg:                            # M8; these settings are assumptions, the proposal sets none
+  hidden: [128, 64]
+  rounds_per_window: 50            # at most; stops early on the clients' pooled validation rows
+  patience: 5
+  local_epochs: 1
+  batch: 512
+  lr: 0.1                          # best validation macro-F1 in the dev sweep, seed 42 (README, M8)
+  momentum: 0.9
+  mu_sweep: [0.001, 0.01, 0.1, 1.0]   # FedProx
+
 eval:                              # M4
   recover_eps: 0.02                # time-to-recover: back within this of pre-drift macro-F1
   n_client_clusters: 3             # clusters of clients by training label mix
@@ -123,7 +133,7 @@ drift:                             # M5
 gate:                              # M5; tuned values are written to reports/m5/<pool>/gate_thresholds.json
   tau_conf: 0.80
   tau_disagree: 0.20
-  max_escalation_rate: 0.10        # tuning budget; an assumption, the proposal sets none
+  max_escalation_rate: 0.10        # tuning target, not a cap; an assumption, the proposal sets none (D10)
   tune_tau_d: [0.02, 0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 1.01]   # 1.01 turns the disagreement test off
   drift_signal: disagreement       # label-free ADWIN signal behind the gate's drift flag
   drift_hold_rows: 200             # flows escalated after each detection

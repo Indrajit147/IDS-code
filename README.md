@@ -31,6 +31,8 @@ python scripts/m5_drift.py --pool dev             # ADWIN, shift, gate; reports/
 python scripts/m6_incremental.py --pool dev --set resources.n_jobs=4   # reports/m6/dev/; --resume continues after a stop
 python scripts/m7_distill.py --pool dev --set resources.n_jobs=4       # E3 + FedMD; reports/m7/dev/; --resume, --tag seed43; --only e3|fedmd, --report
 python scripts/m7_seeds.py --pool dev                                  # reports/m7/dev/SEEDS.md
+python scripts/m8_fedavg.py --pool dev --set resources.n_jobs=4        # E2, FedAvg + FedProx; reports/m8/dev/; --resume, --tag seed43; --only NAME, --report
+python scripts/m7_seeds.py --pool dev --milestone m8                   # reports/m8/dev/SEEDS.md
 ```
 
 On Kaggle, open `notebooks/kaggle_bootstrap.ipynb`. It clones this repo, installs it with `--no-deps`, and auto-discovers the attached data under `/kaggle/input`. The environment is detected automatically and can be forced with `IDS_ENV=local|kaggle`. The Kaggle dataset needs only the five files of `data/processed/`: `data_manifest.json`, `wifi_mqtt_full.parquet`, `wifi_mqtt_dev.parquet`, `wifi_profiling.parquet` and `ble.parquet`.
@@ -61,7 +63,7 @@ Rules:
 | M5  | Drift detection & uncertainty gate                 | ADWIN, PSI/KL/W, gate τc/τd   | ✅ Done (dev + full), acceptance partly met | 2026-11-04 |
 | M6  | Incremental local learning + rehearsal buffer      | DA-FedDistill step 1          | ✅ Done (dev + full) | 2026-11-06 |
 | M7  | DA-FedDistill (federated distillation)             | E3, novelty claim B           | ✅ Done (dev + full); acceptance met on the full pool's window average only, two seeds | 2026-11-06 |
-| M8  | Neural FL baselines (FedAvg / FedProx MLP)         | E2, baselines                 | ⬜ Not started | — |
+| M8  | Neural FL baselines (FedAvg / FedProx MLP)         | E2, baselines                 | 🟨 Dev done (3 seeds); full pool pending on Kaggle | — |
 | M9  | Drift-triggered updates + feature selection        | E4                            | ⬜ Not started | — |
 | M10 | SHAP explainability (local + global store)         | Novelty claim C               | ⬜ Not started | — |
 | M11 | Cloud LLM verifier (gated, JSON-constrained)       | E5, E6, novelty claim A       | ⬜ Not started | — |
@@ -181,7 +183,7 @@ The raw official release (pcaps plus Bluetooth CSVs) is at http://cicresearch.ca
 
 ## Default design decisions (open questions from the proposal)
 
-The proposal ends with five open questions. Development proceeds with the defaults below. Change any of them here before M14. D6 to D9 were added during the work.
+The proposal ends with five open questions. Development proceeds with the defaults below. Change any of them here before M14. D6 to D10 were added during the work.
 
 | # | Question | Default chosen | Rationale |
 |---|---|---|---|
@@ -192,8 +194,9 @@ The proposal ends with five open questions. Development proceeds with the defaul
 | D5 | Privacy section | **Short analysis** of what is shared (soft labels on D_pub, drift stats, escalated evidence) | Low cost, expected by TNSM reviewers |
 | D6 | Shortcut features (added in M1) | **Exclude `IAT` (Wi-Fi) and `cumulative_packet_count` (BLE) from modelling**; BLE `timestamp` is never a feature. A with-IAT run is reported as sensitivity in M14 | `IAT` alone reaches 0.83 macro-F1, and its values (mean 8.5×10⁷, max 1.7×10⁸) look like timestamps rather than inter-arrival times. **M3 A/B (t1, dev):** adding IAT lifts macro-F1 from 0.826 to 0.9998 and DoS F1 from 0.627 to 1.000, so DoS vs DDoS becomes trivially separable. That is the signature of a capture-session shortcut. It may also explain near-perfect scores in published work on this dataset, which still has to be checked against those papers before the paper claims it. Evidence: [`reports/m3/dev/shortcut_checks.md`](reports/m3/dev/shortcut_checks.md). Toggle: `features.exclude_wifi` |
 | D7 | Benign profiling rows (added in M3/M4) | **Decided 2026-11-04: `csv_only` is the headline**, and `all` is reported as secondary. The rows stay in train and test because they supply the real device identities. This slice removes them from scoring only, so the models still train on them | Profiling rows are perfectly separable from CSV benign rows and always classified correctly (fact 9). On the dev pool at t5, removing them from train and test drops benign F1 from 0.982 to 0.815 and macro-F1 from 0.883 to 0.853. Training on them also lowers recall on CSV benign rows from 0.948 to 0.899, which bears directly on the false-positive claim in H3. The dev pool over-represents them (about 3.7 profiling rows per CSV benign row, against about 1.6 on the full pool). **Full pool, same models scored both ways:** window-average macro-F1 0.8915 → 0.8897, t5 macro-F1 0.8718 → 0.8668, t5 benign F1 0.984 → 0.954, t5 benign recall 0.984 → 0.954. The effect on macro-F1 is small, but it is three points on benign metrics |
-| D8 | Drift flag at t1 (added in M5) | **Open.** The gate follows the proposal: confidence, disagreement and ADWIN on a model-output signal. **Proposed:** keep that rule for the headline, and test a PSI-based drift flag as a sensitivity run | At t1 the old model is confidently wrong. On the full pool its error rate goes from 0.000 to 0.715, yet it escalates 0.03 flows per 1k, and ADWIN on entropy and disagreement stays silent. PSI does see the shift: 12 of 15 clients have at least 10% of features over the alert, against 0 of 15 in the control. After t1 that flag barely fires (2, 1, 1 and 2 clients at t2–t5, against 2, 0, 1 and 0 in the controls), so it would cost little, but it also misses t3, where errors do rise. It amounts to a detector for t1 only. The proposal says PSI is "reported, not necessarily used for hard triggers", so either choice is allowed. The dev pool looked different at t5 (7 of 15 clients), so that estimate of the cost was too high |
+| D8 | Drift flag at t1 (added in M5) | **Decided 2026-11-06 (the user asked for the recommended option):** the headline gate keeps the proposal's rule: confidence, disagreement and ADWIN on a model-output signal. A PSI-based drift flag is tested as a sensitivity run in M9 and is not part of any headline | **Why:** the proposal's rule escalates on confidence, disagreement or the drift detector, and says PSI is "reported, not necessarily used for hard triggers", so this is the proposal's own design. PSI would also be a one-window fix, as the evidence below shows. **What it costs:** the headline gate stays blind when an old model first meets t1 traffic, so no later result, E5 and E6 included, may claim to catch that shift, and the paper reports the blind spot. It concerns the old model only: once retrained on t1, the gate works normally. **Evidence:** At t1 the old model is confidently wrong. On the full pool its error rate goes from 0.000 to 0.715, yet it escalates 0.03 flows per 1k, and ADWIN on entropy and disagreement stays silent. PSI does see the shift: 12 of 15 clients have at least 10% of features over the alert, against 0 of 15 in the control. After t1 that flag barely fires (2, 1, 1 and 2 clients at t2–t5, against 2, 0, 1 and 0 in the controls), so it would cost little, but it also misses t3, where errors do rise. It amounts to a detector for t1 only. The proposal says PSI is "reported, not necessarily used for hard triggers", so either choice is allowed. The dev pool looked different at t5 (7 of 15 clients), so that estimate of the cost was too high |
 | D9 | What E4 to E6 build on (added in M7) | **Decided by the user (2026-11-06):** `e3` stays the proposal's E3 and is reported as is; `e3_guard` is carried forward as a named addition | On dev, `e3` doesn't beat local-only and is worse at t5 in all three seeds. `e3_guard` beats it in all three, by small margins. On the full pool (seeds 42 and 43), `e3` beats local-only by 0.0047 and 0.0042 on window average and `e3_guard` by 0.0078 and 0.0074, and only the guard is ahead at t5. The guard is not in the proposal, and it was added after seeing the seed 42 per-client table, so the proposal's rule alone doesn't settle this |
+| D10 | Escalation budget (added in M8, from M5) | **Decided 2026-11-06 (the user asked for the recommended option):** 10% stays the headline operating point, reported as an assumption, alongside the 5%, 20% and 30% points. It is a target when tuning τc and τd on held-out rows, not a cap at test time | **Why:** the proposal sets no number. It asks for "a tunable accuracy–cost frontier", so the frontier is the result and 10% is one point on it. 10% is a middle choice: on the full pool, validation rows catch 10%, 24%, 46% and 61% of edge errors at the four budgets, so higher budgets keep catching more, and no point stands out as a natural limit. **Not a cap:** test rates can pass the target, as M7 shows on next-window traffic, where the rows being scored have drifted from those used for tuning: E3 reached 10.6% (seed 43, model through t2 on t3 traffic) and local-only 13.5%. On the current window, E3's highest is 7.3%. A hard cost limit would need a rate limiter at run time, which the proposal doesn't ask for, so M11 reports the calls per 1k flows it actually makes and the rate limiter is left out. M14 sweeps τc and τd, which covers the frontier |
 
 ---
 
@@ -250,7 +253,7 @@ IDS-code/
 │   ├── llm/           # (planned) backend, prompts, schema, verifier, policy agent
 │   └── utils/         # seed, jsonl, config, run
 ├── scripts/                      # CLI entry points per milestone
-├── notebooks/                    # kaggle_bootstrap, m3_kaggle (M3 to M5), m6_kaggle, m7_kaggle; later Notebook A (train/FL) and B (inference/LLM/XAI)
+├── notebooks/                    # kaggle_bootstrap, m3_kaggle (M3 to M5), m6_kaggle, m7_kaggle, m8_kaggle; later Notebook A (train/FL) and B (inference/LLM/XAI)
 ├── tests/
 ├── reports/m<k>/                 # tracked milestone reports (EDA, figures, manifests)
 └── results/runs/<run_id>/        # untracked: config snapshot, metrics, logs, models
@@ -550,7 +553,7 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 - **Class balance matters, as D2 warned.** Removing it costs 0.010 on window average and 0.015 at t5. Reliability weighting and drift features change nothing measurable; both stay in because the proposal names them, and the M14 ablations can confirm it.
 - **Calibration bug found and fixed.** The first run's g_t had a mean ECE of 0.194 against 0.0097 local, since its target is a mean over clients and so is soft. Each client now fits a temperature on its own rows. Temperatures of 0.14–0.29 confirm the underconfidence, ECE falls to 0.014, and macro-F1 is unchanged as expected.
 - **Communication (15 clients, 6 rounds).** E3 at t5 costs 0.313 MB per client per round up as float32 and 392 bytes down, 22.6 MB up in total. 8-bit + zlib cuts the upload to 1.6 MB, but **that compression is not free**: it costs 0.006 on window average. On the full pool, float32 works out at 4.3 MB per client per round (computed, not yet measured). g_t adds about 0.4 µs per flow at inference.
-- **Gate (seed 42).** The cloud's thresholds kept test escalation under the 10% budget in all cases (highest 9.8%). The t1 blind spot remains: the t0 model facing t1 traffic has a 0.730 error rate, escalates 1.6% of flows and catches 1.9% of its errors, so D8 is still open.
+- **Gate (seed 42).** The cloud's thresholds kept test escalation under the 10% budget in all cases (highest 9.8%). The t1 blind spot remains: the t0 model facing t1 traffic has a 0.730 error rate, escalates 1.6% of flows and catches 1.9% of its errors, see D8.
 
 **Results, full pool (2026-11-06)**: [`reports/m7/full/DISTILL.md`](reports/m7/full/DISTILL.md)
 - Run: Kaggle at `d5c2b77`, one seed, 4 threads, settings the same as the repo config. E3 took 62 min and FedMD 61 min, with a peak of 4.2 GB out of 31.3 GB. `git_dirty` is true, as on the earlier Kaggle full runs.
@@ -578,7 +581,7 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 - **Several dev findings changed size on the full pool.** The 8-bit uplink cost 0.006 on dev, and costs 0.0002 here. Drift features had no measurable effect on dev, and add 0.002 here on window average, though they are behind at t5. Class balance adds 0.005 on window average but is behind at t5, and at t4 its absence costs 0.031. Reliability weighting is again no better than the mean.
 - **FedMD is worse than doing nothing:** 0.034 below local-only, and slightly below E1, with an ECE of 0.057.
 - **Communication (15 clients, 6 rounds).** E3 at t5 costs 4.34 MB per client per round up as float32, matching the 4.3 MB computed earlier, and 392 bytes down. The whole run is 338.6 MB up as float32 and 16.6 MB as 8-bit + zlib, and 35.3 kB down. g_t adds about 0.7 µs per flow at inference.
-- **Gate.** Test escalation stayed under the 10% budget in all cases (highest 9.7%). E3 has fewer errors than local-only under the same thresholds (t5: 0.103 vs 0.123), and catches a slightly smaller share of them (0.278 vs 0.293). The t1 blind spot remains: the t0 model facing t1 traffic has a 0.741 error rate, escalates 0.2% of flows and catches 0.2% of its errors, so D8 is still open.
+- **Gate.** Test escalation stayed under the 10% budget in all cases (highest 9.7%). E3 has fewer errors than local-only under the same thresholds (t5: 0.103 vs 0.123), and catches a slightly smaller share of them (0.278 vs 0.293). The t1 blind spot remains: the t0 model facing t1 traffic has a 0.741 error rate, escalates 0.2% of flows and catches 0.2% of its errors, see D8.
 - **The local models don't match M6 exactly here.** They are the same through t2, and from t3 on single cells differ by up to 0.0015, which moves the window average by 0.00013. Code, library versions and thread count are the same, and the cause isn't known. All E3 comparisons with local-only are paired within this run, so this doesn't touch them. The naïve row comes from M6's run.
 
 **Second full-pool seed (2026-11-06, Kaggle, seed 43)**: [`reports/m7/full/SEEDS.md`](reports/m7/full/SEEDS.md), [`reports/m7/full/seed43/DISTILL.md`](reports/m7/full/seed43/DISTILL.md)
@@ -597,8 +600,8 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 - **The guard is ahead of local-only at t1, t2, t3 and t5 in both seeds.** It is level at t0, and at t4 the sign changes (-0.002, +0.002). The caveats in D9 still apply.
 - **Without class balance, E3 is ahead at t5 in both seeds** (+0.0032, +0.0035), with lower forgetting, though it dips at t4 in both (0.873, 0.882). This is the reverse of dev, where removing class balance cost 0.015 at t5. It was not the rule fixed before the results, so it stays a variant.
 - **Per client, the pattern also repeats.** Clients improved by g_t: 8 of 15 at t1, 7 at t2, 5 at t3, 3 at t4, 6 at t5. The mean change per client is negative at t3, t4 and t5 (-0.023, -0.019, -0.002).
-- **The gate's budget was exceeded once on the test rows.** E3 with the model through t2, facing t3 traffic, escalates 10.6% of flows. With the model of the current window, its highest is 7.3%. Seed 42's highest was 9.7%. The t1 blind spot remains (0.741 error rate, 0.2% escalated), so D8 is still open.
-- **No naïve row here.** M6 was not run on the full pool at seed 43, so naïve incremental stays a one-seed comparison, and the local models for this seed have no M6 report to be checked against.
+- **The gate's budget was exceeded once on the test rows.** E3 with the model through t2, facing t3 traffic, escalates 10.6% of flows. With the model of the current window, its highest is 7.3%. Seed 42's highest was 9.7%. The t1 blind spot remains (0.741 error rate, 0.2% escalated), see D8.
+- **No naïve row here.** M6 was not run on the full pool at seed 43, so naïve incremental stays a one-seed comparison. The user decided on 2026-11-06 that this comparison isn't needed, so no M6 run will be added for it.
 
 **Choices the proposal leaves open (additions):**
 - g_t is a softmax regression on log probabilities with L2 toward the plain mean of the two boosters, fitted on at most 200,000 sampled (client, public row) pairs. Drift features: booster disagreement, entropy, the client's share of features over the PSI alert.
@@ -608,14 +611,58 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 
 ### M8: Neural FL baselines (FedAvg / FedProx MLP)
 **Goal:** the classic FL references (E2).
-- [ ] MLP in torch (CPU), same partitions and timeline
-- [ ] FedAvg and FedProx (μ sweep), each with and without incremental training
+- [x] MLP in torch (CPU), same partitions and timeline (`src/ids/fl/fedavg.py`, `scripts/m8_fedavg.py`)
+- [x] FedAvg and FedProx (μ sweep), each with and without incremental training
+- [ ] Full-pool run: `notebooks/m8_kaggle.ipynb`, each pass in its own process
 - **Acceptance:** E2 results appear in the same table format as E3.
+
+**Results, dev pool (2026-11-06)**: [`reports/m8/dev/FEDAVG.md`](reports/m8/dev/FEDAVG.md), [`reports/m8/dev/SEEDS.md`](reports/m8/dev/SEEDS.md)
+
+- Run: `python scripts/m8_fedavg.py --pool dev --set resources.n_jobs=4` (about 4 min, 1.2 GB), repeated with seeds 43 and 44. Same partitions, test rows, rehearsal buffers and validation rows as E3. Scores use CSV-only rows (D7). A dev run split as the notebook splits it (`--only`, then `--report`) reproduces `results.csv` exactly.
+
+  | method | window avg | final (t5) | class forgetting | window avg minus E3, per seed | final minus E3, per seed |
+  |---|---:|---:|---:|---:|---:|
+  | **E2 FedAvg, incremental (headline)** | **0.8156 ± 0.0096** | **0.7618 ± 0.0074** | **0.1048 ± 0.0076** | -0.0889, -0.1075, -0.0943 | -0.1098, -0.1151, -0.1242 |
+  | E2 FedAvg, none (t0 only) | 0.3384 ± 0.0019 | 0.0747 ± 0.0003 | n/a | -0.5758, -0.5752, -0.5712 | -0.8024, -0.8054, -0.8026 |
+  | FedAvg, no rehearsal (addition) | 0.8149 ± 0.0088 | 0.7668 ± 0.0088 | 0.1015 ± 0.0124 | -0.0901, -0.1071, -0.0956 | -0.1024, -0.1229, -0.1088 |
+  | FedProx, incremental (μ 0.1) | 0.8236 ± 0.0017 | 0.7703 ± 0.0053 | 0.1090 ± 0.0078 | -0.0886, -0.0909, -0.0870 | -0.1081, -0.1140, -0.1014 |
+  | FedProx, none (t0 only) | 0.3384 ± 0.0019 | 0.0747 ± 0.0002 | n/a | -0.5758, -0.5752, -0.5712 | -0.8023, -0.8055, -0.8026 |
+  | E3 DA-FedDistill (M7) | 0.9125 ± 0.0006 | 0.8782 ± 0.0017 | 0.0321 ± 0.0002 | | |
+  | Local + rehearsal (M6) | 0.9119 ± 0.0006 | 0.8820 ± 0.0021 | 0.0275 ± 0.0005 | | |
+  | FedMD-style digest (M7) | 0.8734 ± 0.0005 | 0.8450 ± 0.0026 | 0.0460 ± 0.0030 | | |
+  | E1 centralized (M3, one seed) | 0.8844 | 0.8632 | 0.0370 | | |
+
+- **Acceptance is met:** E2 is reported in E3's table format. Updating matters far more than the choice of method: from about 0.34 without updates to about 0.82 with them.
+- **E3 is well ahead of classic FL on this pool.** FedAvg is 0.089 to 0.108 below E3 on window average in every seed, and 0.110 to 0.124 below at t5. Its class forgetting is three times E3's (0.105 vs 0.032), and its mean ECE is 0.061 to 0.076 against 0.013 to 0.016.
+- **This doesn't show that distillation is what helps.** Local + rehearsal, with no collaboration, is just as far ahead of FedAvg (M7 found E3 level with it on dev). The result fits tree models beating this small MLP on these features, one global model against a model per client, or both, and this design can't separate them. FedAvg is also below E1, the other single global model, by 0.060 to 0.079, so trees are at least part of it.
+- **The gap is largest in DoS** at t5 for seed 42 (F1 0.448 vs 0.761), then Spoofing (0.709 vs 0.860).
+- **FedProx is no worse, and its edge over FedAvg isn't clear.** μ 0.1 had the best validation score in all three seeds. FedProx is ahead of FedAvg by +0.0003, +0.0165 and +0.0073 on window average, and much of that comes from FedAvg's larger spread between seeds (0.0096 vs 0.0017). μ 1 is too strong, at 0.7906.
+- **Rehearsal adds nothing measurable here.** Window average differs by -0.0011, +0.0004 and -0.0013 without it, and forgetting is the same within the spread. The cause isn't known. M6 found a similarly small effect for trees on macro-F1, though there it did lower forgetting.
+- **Communication depends on the pool.** FedAvg sends 57 kB each way per client per round, and 173 to 204 MB up and down over the whole dev run, with 101 to 119 rounds. E3 sends 22.6 MB up on dev, so it's cheaper here. Its cost grows with D_pub (338.6 MB on the full pool as float32), and FedAvg's grows with rounds, so the full pool may reverse this before compression. To be measured.
+
+**Choices the proposal leaves open (additions):**
+- The proposal names FedAvg and FedProx with an MLP and sets none of the settings. Hidden layers [128, 64], 1 local epoch, SGD with momentum 0.9, batch 512, patience 5, a class-balanced loss per client and a temperature fitted on validation rows are assumptions. So is signed-log scaling, with statistics from t0 only, built from per-client totals.
+- `lr 0.1` and up to 50 rounds were chosen on validation rows only, FedAvg, seed 42, before the other passes were run. The sweep's highest rate didn't win, so it wasn't cut off by the range. Test scores for three of these runs were printed before the choice, though the rule looks only at validation. These were not tuned: the architecture, epochs and batch size, so a better MLP could close part of the gap. Fair use in the paper is "this MLP", not "any neural FL".
+
+  | lr | rounds at most | mean best validation macro-F1 | excl. t0 |
+  |---:|---:|---:|---:|
+  | 0.01 | 20 | 0.7874 | 0.7487 |
+  | 0.03 | 20 | 0.8245 | 0.7921 |
+  | 0.03 | 50 | 0.8276 | 0.7945 |
+  | 0.1 | 20 | 0.8382 | 0.8062 |
+  | **0.1** | **50** | **0.8388** | **0.8068** |
+  | 0.2 | 20 | 0.8350 | 0.8020 |
+  | 0.2 | 50 | 0.8350 | 0.8020 |
+  | 0.3 | 20 | 0.8305 | 0.7966 |
+
+- "None" in the proposal's E2 row is the t0 model, never updated. "Incremental" doesn't say whether to rehearse, so the headline matches E3 (new rows + buffer), and `fedavg_no_rehearsal` is an addition.
+- Lr and rounds were chosen on the dev pool and are kept for the full pool, where each round has more steps. Refitting them there would need a sweep on Kaggle.
 
 ### M9: Drift-triggered updates + feature selection
 **Goal:** E4, drift-aware scheduling and feature focus.
 - [ ] Updates triggered by ADWIN instead of a fixed per-window schedule
 - [ ] Top-K features by mutual information per window (K sweep)
+- [ ] Sensitivity run (D8): a PSI-based drift flag in the gate against the proposal's rule, reported and not a headline
 - **Acceptance:** E4 vs E3 comparison of time-to-recover and performance variance (tests H2).
 
 ### M10: SHAP explainability
@@ -655,7 +702,7 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 **Goal:** every number the paper needs.
 - [ ] E1–E7 across ≥3 seeds (mean ± std)
 - [ ] Ablations: no ADWIN, no feature selection, no rehearsal, no LLM verification, LLM always-on vs gated, SHAP-only vs SHAP+LLM explanations, D_pub benign-only
-- [ ] Sensitivity: 10/15/20 clients, Dirichlet α, τc/τd, alternate timelines
+- [ ] Sensitivity: 10/15/20 clients, Dirichlet α, τc/τd (the accuracy–cost frontier at 5/10/20/30%, D10), alternate timelines
 - [ ] Sensitivity to suspect features and rows: with IAT (D6), without `Number`/`Weight` (fact 8), without profiling rows (D7)
 - [ ] Sensitivity to the split: train on the official train block and test on the official test block, instead of M2's random split, to see whether mixing the official split inflates scores
 - [ ] Hypotheses H1–H4 evaluated, with statistical tests
@@ -693,3 +740,5 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 | 2026-11-06 | M7 ✅ full pool | Kaggle run at `d5c2b77` (about 2 h 3 min, one seed). E3 0.9257 vs local-only 0.9210 on window average, so acceptance is met there, but E3 is behind at t4 and t5 (t5 0.8947 vs 0.8972) and most clients lose from t3 on. `e3_guard` 0.9288, FedMD 0.8872. **Crash:** the same FedMD t3 step passed this time with a 4.2 GB peak of 31.3 GB, so this run gives no sign of a memory problem. The first attempt's cause is still unknown. |
 | 2026-11-06 | D9 decided | `e3` stays the proposal's E3, and `e3_guard` is carried as a named addition. A second full-pool seed (43) is being run, because dev and full disagree on E3 vs local-only; `notebooks/m7_kaggle.ipynb` now takes `SEED`. |
 | 2026-11-06 | M7 full pool, seed 43 | Kaggle run at `c72e9c5`. E3 0.9251 vs local-only 0.9209 on window average, t5 0.8949 vs 0.8965, the same pattern as seed 42. `e3_guard` 0.9283 and ahead at t5 in both seeds. E3's test escalation reached 10.6% once, over the 10% budget, on next-window traffic. `m7_seeds.py` now compares only the methods every run has. No crash in this run, so the first attempt's cause stays unknown. |
+| 2026-11-06 | D8, D10 decided | The user asked for the recommended options. D8: the headline gate keeps the proposal's rule, and a PSI flag becomes a sensitivity run in M9. D10: 10% stays the headline operating point, as a tuning target and not a cap, with the frontier reported. The M6 comparison at full-pool seed 43 isn't needed. |
+| 2026-11-06 | M8 🟨 (dev) | FedAvg and FedProx on an MLP, 3 seeds. FedAvg 0.8156 and FedProx 0.8236 on window average, against E3 0.9125; 0.34 without updates. Acceptance met. Local-only is just as far ahead, so this doesn't isolate distillation as the cause. Lr 0.1 chosen on validation rows. Full-pool notebook ready, not yet run. 89 tests pass. |
