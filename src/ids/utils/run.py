@@ -18,6 +18,20 @@ TRACKED_PACKAGES = ["numpy", "pandas", "pyarrow", "scikit-learn", "scipy", "xgbo
                     "lightgbm", "shap", "torch", "transformers", "bitsandbytes", "pyyaml"]
 
 
+def memory_note() -> str:
+    """Process and machine memory for the log, so that a run that gets killed leaves a trail."""
+    try:
+        status = dict(line.split(":", 1) for line in open("/proc/self/status") if ":" in line)
+        info = dict(line.split(":", 1) for line in open("/proc/meminfo") if ":" in line)
+        gb = lambda v: int(v.split()[0]) / 1024 ** 2
+        return (f"rss {gb(status['VmRSS']):.2f} GB, peak {gb(status['VmHWM']):.2f} GB, "
+                f"machine free {gb(info['MemAvailable']):.1f} of {gb(info['MemTotal']):.1f} GB")
+    except OSError:     # not Linux
+        import psutil
+        v = psutil.virtual_memory()
+        return f"rss {psutil.Process().memory_info().rss / 1e9:.2f} GB, machine free {v.available / 1e9:.1f} of {v.total / 1e9:.1f} GB"
+
+
 def _git(*args: str) -> str | None:
     try:
         return subprocess.run(["git", *args], cwd=REPO_ROOT, capture_output=True,

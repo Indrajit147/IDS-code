@@ -29,7 +29,7 @@ python scripts/m3_shortcut_checks.py --pool dev  # IAT, Number/Weight, profiling
 python scripts/m4_evaluate.py --pool dev         # regression check + standard report; reports/m4/dev/
 python scripts/m5_drift.py --pool dev             # ADWIN, shift, gate; reports/m5/dev/
 python scripts/m6_incremental.py --pool dev --set resources.n_jobs=4   # reports/m6/dev/; --resume continues after a stop
-python scripts/m7_distill.py --pool dev --set resources.n_jobs=4       # E3 + FedMD; reports/m7/dev/; --resume, --tag seed43
+python scripts/m7_distill.py --pool dev --set resources.n_jobs=4       # E3 + FedMD; reports/m7/dev/; --resume, --tag seed43; --only e3|fedmd, --report
 python scripts/m7_seeds.py --pool dev                                  # reports/m7/dev/SEEDS.md
 ```
 
@@ -521,7 +521,7 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 - [x] Keep DDoS from dominating the aggregation and calibrator, since it is 65% of D_pub (D2): class-balanced weights on D_pub rows, compared with unweighted
 - [x] Communication accounting (bytes per round, rounds), including compressing soft labels
 - [x] Also run the plain FedMD-style distillation baseline
-- [ ] Full-pool run: `notebooks/m7_kaggle.ipynb` is ready but has not been run
+- [ ] Full-pool run: the first Kaggle attempt died after FedMD's t2, cause not yet known (see the progress log). `notebooks/m7_kaggle.ipynb` now runs each pass in its own process and keeps E3 if FedMD fails
 - **Acceptance:** E3 is better than local-only, and its window-averaged macro-F1 is compared with E1, static and naïve incremental (tests H1). **Not met on the dev pool.**
 
 **Results, dev pool (2026-11-06)**: [`reports/m7/dev/DISTILL.md`](reports/m7/dev/DISTILL.md), [`reports/m7/dev/SEEDS.md`](reports/m7/dev/SEEDS.md)
@@ -641,3 +641,4 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 | 2026-11-04 | M6 ✅ (dev) | Per-client continued boosting with a class-balanced buffer, over 3 seeds. Forgetting 0.035 naïve, 0.028 with 2,000 rows, 0.022 with 8,000; the buffer stays within budget, so acceptance is met on dev. Macro-F1 does not move (all 0.912–0.913), because old classes recur in this timeline. Local models beat E1 (0.884), mostly on DDoS/DoS, which is likely a client label-mix effect. Full-pool notebook ready, not yet run. 56 tests pass. |
 | 2026-11-06 | M6 full pool | Kaggle run at `67a2c81` (2 h 38 min, one seed). Forgetting 0.024 naïve, 0.022 with 2,000 rows, 0.019 with 8,000; the buffer stays within budget, so acceptance is met on this seed, though at 2,000 rows nearly all of the gain is Spoofing. Macro-F1 does not move (0.921). Local models beat E1 (0.890) by 0.031, mostly on DDoS/DoS. |
 | 2026-11-06 | M7 🟨 (dev) | DA-FedDistill as the proposal specifies, plus FedMD, over 3 seeds. **Acceptance not met:** E3 0.9125 vs local-only 0.9119 on window average (within noise), and worse at t5 in all seeds (0.878 vs 0.882). H1 holds against static, not against naïve. FedMD is 0.038 below local-only. A client guard, added after seeing results, beats local-only in all seeds (0.9157, new open decision D9). Fixed an underconfident g_t (ECE 0.194 → 0.014). Full-pool notebook ready, not yet run. 75 tests pass. |
+| 2026-11-06 | M7 Kaggle crash | The first full-pool attempt finished all six E3 windows, then died after FedMD's t2, with no error in the log. **Cause not known yet.** A local replay of FedMD's training through t3 on the full pool, without evaluation or the E3 pass, did not crash and stayed near 2.3 GB, so the digest step on this data is not enough to explain it, on Windows with xgboost 3.2.0 (Kaggle has 3.4.1). The script gains `--only` and `--report` and logs memory; a dev run split this way reproduces `results.csv` and the other result tables exactly. |
