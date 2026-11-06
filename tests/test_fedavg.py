@@ -136,3 +136,17 @@ def test_mu_pick_uses_validation_and_ties_go_to_the_lower_mu():
     spec.loader.exec_module(m8)
     assert m8.pick_mu({"fedprox_mu0.1": [.8, .8], "fedprox_mu0.01": [.9, .7], "fedprox_mu1": [.7, .7]}) == "fedprox_mu0.01"
     assert m8.pick_mu({"fedprox_mu1": [.9], "fedprox_mu0.001": [.5]}) == "fedprox_mu1"
+
+
+def test_pick_lr_uses_the_mean_over_seeds_and_skips_unfinished_rates():
+    import importlib.util, pathlib
+    import pandas as pd
+    spec = importlib.util.spec_from_file_location("m8_sweep", pathlib.Path(__file__).parents[1] / "scripts" / "m8_lr_sweep.py")
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    # 0.1 has the best single run and collapses on the other seed; 0.3 is best but one seed didn't finish
+    t = pd.DataFrame({"lr": [.1, .1, .01, .01, .3], "mean_val": [.84, .70, .80, .81, .9]})
+    assert m.pick_lr(t, 2) == .01
+    assert m.pick_lr(pd.DataFrame({"lr": [.1, .01], "mean_val": [.8, .8]}), 1) == .01   # a tie goes to the lower rate
+    with pytest.raises(SystemExit):
+        m.pick_lr(pd.DataFrame({"lr": [.1], "mean_val": [.8]}), 2)

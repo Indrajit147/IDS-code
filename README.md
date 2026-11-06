@@ -33,6 +33,7 @@ python scripts/m7_distill.py --pool dev --set resources.n_jobs=4       # E3 + Fe
 python scripts/m7_seeds.py --pool dev                                  # reports/m7/dev/SEEDS.md
 python scripts/m8_fedavg.py --pool dev --set resources.n_jobs=4        # E2, FedAvg + FedProx; reports/m8/dev/; --resume, --tag seed43; --only NAME, --report
 python scripts/m7_seeds.py --pool dev --milestone m8                   # reports/m8/dev/SEEDS.md
+python scripts/m8_lr_sweep.py --pool dev --lrs 0.03 0.1 --seeds 42 43   # choose lr on validation rows; reports/m8/<pool>/LR_SWEEP.csv
 ```
 
 On Kaggle, open `notebooks/kaggle_bootstrap.ipynb`. It clones this repo, installs it with `--no-deps`, and auto-discovers the attached data under `/kaggle/input`. The environment is detected automatically and can be forced with `IDS_ENV=local|kaggle`. The Kaggle dataset needs only the five files of `data/processed/`: `data_manifest.json`, `wifi_mqtt_full.parquet`, `wifi_mqtt_dev.parquet`, `wifi_profiling.parquet` and `ble.parquet`.
@@ -63,7 +64,7 @@ Rules:
 | M5  | Drift detection & uncertainty gate                 | ADWIN, PSI/KL/W, gate τc/τd   | ✅ Done (dev + full), acceptance partly met | 2026-11-04 |
 | M6  | Incremental local learning + rehearsal buffer      | DA-FedDistill step 1          | ✅ Done (dev + full) | 2026-11-06 |
 | M7  | DA-FedDistill (federated distillation)             | E3, novelty claim B           | ✅ Done (dev + full); acceptance met on the full pool's window average only, two seeds | 2026-11-06 |
-| M8  | Neural FL baselines (FedAvg / FedProx MLP)         | E2, baselines                 | 🟨 Dev done (3 seeds); full pool pending on Kaggle | — |
+| M8  | Neural FL baselines (FedAvg / FedProx MLP)         | E2, baselines                 | 🟨 Dev done (3 seeds); first full-pool run unstable, rerun with lr chosen on the full pool pending | — |
 | M9  | Drift-triggered updates + feature selection        | E4                            | ⬜ Not started | — |
 | M10 | SHAP explainability (local + global store)         | Novelty claim C               | ⬜ Not started | — |
 | M11 | Cloud LLM verifier (gated, JSON-constrained)       | E5, E6, novelty claim A       | ⬜ Not started | — |
@@ -613,7 +614,7 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 **Goal:** the classic FL references (E2).
 - [x] MLP in torch (CPU), same partitions and timeline (`src/ids/fl/fedavg.py`, `scripts/m8_fedavg.py`)
 - [x] FedAvg and FedProx (μ sweep), each with and without incremental training
-- [ ] Full-pool run: `notebooks/m8_kaggle.ipynb`, each pass in its own process
+- [ ] Full-pool run: `notebooks/m8_kaggle.ipynb`, each pass in its own process. A first run at lr 0.1 was unstable (below); the notebook now chooses the rate on the full pool first
 - **Acceptance:** E2 results appear in the same table format as E3.
 
 **Results, dev pool (2026-11-06)**: [`reports/m8/dev/FEDAVG.md`](reports/m8/dev/FEDAVG.md), [`reports/m8/dev/SEEDS.md`](reports/m8/dev/SEEDS.md)
@@ -656,7 +657,15 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
   | 0.3 | 20 | 0.8305 | 0.7966 |
 
 - "None" in the proposal's E2 row is the t0 model, never updated. "Incremental" doesn't say whether to rehearse, so the headline matches E3 (new rows + buffer), and `fedavg_no_rehearsal` is an addition.
-- Lr and rounds were chosen on the dev pool and are kept for the full pool, where each round has more steps. Refitting them there would need a sweep on Kaggle.
+- Lr and rounds above were chosen on the dev pool, for the dev pool. The full pool gets its own rate, as below.
+
+**First full-pool run, not the result (2026-11-07, Kaggle, seeds 42 and 43, lr 0.1)**: [`reports/m8/full/lr0.1/SEEDS.md`](reports/m8/full/lr0.1/SEEDS.md), [`reports/m8/full/lr0.1/FEDAVG.md`](reports/m8/full/lr0.1/FEDAVG.md)
+
+- Run at `285be6e`, 54 and 61 min, with no crash and no config difference other than the seed. **Training is unstable at this rate, so these scores don't measure FedAvg fairly.** FedAvg gets 0.8267 and 0.6063 on window average. At seed 43's t2 it falls to 0.292, with its best round at 0, and doesn't recover. Without rehearsal it reaches 0.4408 and 0.3854, with F1 0.000 on benign at seed 42's t5. FedProx at μ 0.001 falls to 0.597 at seed 42's t4.
+- **The validation rows show the same collapse** (0.466 at seed 43's t2, against about 0.82 in the stable passes), so this is a training failure and not a problem in the test rows or the report.
+- **The likely cause, not yet tested:** the full pool has 11 to 18 times the rows per window, so a round has that many more SGD steps than on dev, where lr 0.1 was chosen. The early stopping also can't go back to the model a window started from, so a collapse in the first rounds is kept and carries into the next window.
+- **FedAvg vs FedProx can't be read from this run.** FedProx at μ 0.01 gets 0.8340 ± 0.0025 and looks far ahead of FedAvg's 0.7165 ± 0.1558, but μ 0.001 and FedAvg fail at random, and μ 0.01 is too weak a pull for this to be clearly the proximal term at work. Even so, every stable pass is about 0.09 or more below E3 (0.9254).
+- **The fix:** `scripts/m8_lr_sweep.py` runs FedAvg at lr 0.003, 0.01, 0.03 and 0.1 on seeds 42 and 43, and takes the highest mean validation score over windows and seeds. The rule was fixed after seeing this run, but before any result at the other rates, and it reads no test rows. `notebooks/m8_kaggle.ipynb` then runs all passes at that rate.
 
 ### M9: Drift-triggered updates + feature selection
 **Goal:** E4, drift-aware scheduling and feature focus.
@@ -742,3 +751,4 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 | 2026-11-06 | M7 full pool, seed 43 | Kaggle run at `c72e9c5`. E3 0.9251 vs local-only 0.9209 on window average, t5 0.8949 vs 0.8965, the same pattern as seed 42. `e3_guard` 0.9283 and ahead at t5 in both seeds. E3's test escalation reached 10.6% once, over the 10% budget, on next-window traffic. `m7_seeds.py` now compares only the methods every run has. No crash in this run, so the first attempt's cause stays unknown. |
 | 2026-11-06 | D8, D10 decided | The user asked for the recommended options. D8: the headline gate keeps the proposal's rule, and a PSI flag becomes a sensitivity run in M9. D10: 10% stays the headline operating point, as a tuning target and not a cap, with the frontier reported. The M6 comparison at full-pool seed 43 isn't needed. |
 | 2026-11-06 | M8 🟨 (dev) | FedAvg and FedProx on an MLP, 3 seeds. FedAvg 0.8156 and FedProx 0.8236 on window average, against E3 0.9125; 0.34 without updates. Acceptance met. Local-only is just as far ahead, so this doesn't isolate distillation as the cause. Lr 0.1 chosen on validation rows. Full-pool notebook ready, not yet run. 89 tests pass. |
+| 2026-11-07 | M8 full pool, first run | Kaggle at `285be6e`. Lr 0.1 from the dev sweep is unstable on the full pool: FedAvg 0.8267 and 0.6063 on window average across two seeds, collapsing on validation rows too. Kept in `reports/m8/full/lr0.1/`, not used as the result. Added a validation-only lr sweep on the full pool ahead of the final passes. |
