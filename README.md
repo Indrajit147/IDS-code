@@ -255,7 +255,7 @@ IDS-code/
 │   ├── llm/           # (planned) backend, prompts, schema, verifier, policy agent
 │   └── utils/         # seed, jsonl, config, run
 ├── scripts/                      # CLI entry points per milestone
-├── notebooks/                    # kaggle_bootstrap, m3_kaggle (M3 to M5), m6_kaggle, m7_kaggle, m8_kaggle; later Notebook A (train/FL) and B (inference/LLM/XAI)
+├── notebooks/                    # kaggle_bootstrap, m3_kaggle (M3 to M5), m6_kaggle, m7_kaggle, m8_kaggle, m8_dirty_check; later Notebook A (train/FL) and B (inference/LLM/XAI)
 ├── tests/
 ├── reports/m<k>/                 # tracked milestone reports (EDA, figures, manifests)
 └── results/runs/<run_id>/        # untracked: config snapshot, metrics, logs, models
@@ -662,7 +662,9 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 
 **Results, full pool (2026-11-07, Kaggle, seeds 42 and 43, lr 0.03)**: [`reports/m8/full/FEDAVG.md`](reports/m8/full/FEDAVG.md), [`reports/m8/full/SEEDS.md`](reports/m8/full/SEEDS.md), [`reports/m8/full/LR_SWEEP.csv`](reports/m8/full/LR_SWEEP.csv)
 
-- Run at `cb9b1dc`, 4 threads, 3 h 40 min in one notebook: 85 min for the sweep, then both seeds. Peak 4.5 GB of 31.3 GB, no crash, and the configs differ only in seed and rate. `git_dirty` is true, as on the earlier Kaggle runs.
+- Run at `cb9b1dc`, 4 threads, 3 h 40 min in one notebook: 85 min for the sweep, then both seeds. Peak 4.5 GB of 31.3 GB, all 22 runs ended without error, and the configs differ only in seed and rate.
+- **`git_dirty` is true on all 22 runs, and the cause isn't traced yet.** The flag ignores untracked files, so some tracked file differed from `cb9b1dc` on Kaggle, and the zip doesn't say which. Results can't be called run from an unmodified commit until this is settled. A local rebuild of M2 in a clean clone at `cb9b1dc` changes no file's content, so it doesn't reproduce the flag, and M3's note that the M2 step "most likely" causes it remains unproven. `notebooks/m8_dirty_check.ipynb` repeats the setup on Kaggle and records the changed files. New runs also record them, as `git_changed` in `environment.json`.
+- **Checked from the raw outputs (2026-11-07):** macro-F1 recomputed from the confusion counts matches `results.csv` for all 528 cells and `summary.json` for every method and seed. The E3, guard, local and FedMD rows match the tracked M7 reports. The partition rebuilt at `cb9b1dc` on this PC matches `data/splits/full` row for row. Kaggle's test rows per window match the local partition's counts, which shows equal counts, not yet equal rows. The claim that M8 shares E3's validation rows and buffers rests on the shared seed keys in the code (`scripts/m8_fedavg.py:62,76`), not on a comparison of the rows.
 - **Rate, from validation rows only:**
 
   | lr | mean best validation, seed 42 | seed 43 | mean |
@@ -687,7 +689,7 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 - FedAvg trails E3 by 0.0802 and 0.0838 on window average and by 0.1120 and 0.1143 at t5. At t5 on seed 42 the gap is widest on DoS (0.570 against 0.776) and spoofing (0.523 against 0.769).
 - **This doesn't show that distillation beats FedAvg.** Local boosters with no federation are just as far ahead (0.0755 and 0.0795), as on dev. The comparison mixes the model family with the federation method, and only the rate of this MLP was tuned on the full pool, so the claim stays "this MLP".
 - **FedAvg and FedProx can't be separated.** FedAvg minus FedProx is +0.0045 at seed 42 and -0.0027 at seed 43, and the picked μ differs (0.01, then 0.001). Stronger μ is clearly worse: 0.8261 at 0.1 and 0.8108 at 1. FedProx's lead on dev (0.8236 against 0.8156) doesn't hold here.
-- **Rehearsal doesn't help FedAvg.** No rehearsal is ahead on both seeds, by 0.0031 and 0.0012 on window average and 0.0143 and 0.0078 at t5. Dev showed no difference, and neither does M6's naive incremental row (0.9211 against 0.9210, seed 42). The cause isn't tested.
+- **Rehearsal doesn't help FedAvg.** No rehearsal is ahead on both seeds, by 0.0031 and 0.0012 on window average and 0.0142 and 0.0078 at t5. On dev the window average shows no difference (0.8149 against 0.8156), and neither does M6's naive incremental row (0.9211 against 0.9210, seed 42). The cause isn't tested. The two passes also stop early on different validation rows, because the no-rehearsal pass has no buffer rows to draw from (`scripts/m8_fedavg.py:71-77`). The test rows are the same.
 - **Communication:** FedAvg sends 227.9 and 186.8 MB up and down over the run, as float32 (133 and 109 rounds), and the difference is only early stopping. E3 at seed 42 sends 338.6 MB up as float32, or 16.6 MB as 8-bit + zlib, and 35.3 kB down. FedAvg's weights weren't compressed, so 16.6 MB against about 200 MB isn't like for like, and uncompressed E3 uploads more than FedAvg.
 - Training is steady across seeds but early stopping isn't: rounds per window range from 6 to 42, and at seed 42's t4 the first round of the window is the best one. Scores don't show a collapse from this.
 - **Acceptance met:** E2 is in the same table format as E3, on the same partitions, test rows and buffers.
@@ -796,4 +798,5 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 | 2026-11-06 | M8 🟨 (dev) | FedAvg and FedProx on an MLP, 3 seeds. FedAvg 0.8156 and FedProx 0.8236 on window average, against E3 0.9125; 0.34 without updates. Acceptance met. Local-only is just as far ahead, so this doesn't isolate distillation as the cause. Lr 0.1 chosen on validation rows. Full-pool notebook ready, not yet run. 89 tests pass. |
 | 2026-11-07 | M8 full pool, first run | Kaggle at `285be6e`. Lr 0.1 from the dev sweep is unstable on the full pool: FedAvg 0.8267 and 0.6063 on window average across two seeds, collapsing on validation rows too. Kept in `reports/m8/full/lr0.1/`, not used as the result. Added a validation-only lr sweep on the full pool ahead of the final passes. |
 | 2026-11-07 | M8 ✅ | Kaggle at `cb9b1dc`, seeds 42 and 43. Lr 0.03 chosen on full-pool validation rows; lr 0.1's collapse reproduced. FedAvg 0.8434 ± 0.0029, FedProx 0.8425 ± 0.0021, no real difference between them; E3 0.9254, local 0.9209. Rehearsal doesn't help FedAvg. The gap mixes model family with federation, so the claim is about this MLP. |
+| 2026-11-07 | M8 check | Recomputed the M8 numbers from raw outputs: they match, apart from one rounding corrected in this README (0.0143 to 0.0142). The `git_dirty` flag on all Kaggle runs is not traced: added `notebooks/m8_dirty_check.ipynb` and a `git_changed` field to every run's `environment.json`. |
 | 2026-11-07 | M9 plan extended | Checked whether the drift-score adaptive threshold (explanation document, Methodology Step 5) exists. It doesn't: M5 has a hard flag, and M7 re-picks one global τ pair without a drift score. Added to M9, with a fixed vs adaptive gate comparison in its acceptance. |
