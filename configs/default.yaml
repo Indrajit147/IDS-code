@@ -124,6 +124,15 @@ eval:                              # M4
   n_client_clusters: 3             # clusters of clients by training label mix
   latency_threads: 1               # edge latency is reported single-threaded
 
+schedule:                          # M9; all of these are additions or assumptions, the proposal sets none (README, M9)
+  chunks: 10                       # rows of a window arrive in this many rounds
+  reference_rows: 20000            # at most, per client: ADWIN's starting window after an update
+  k_sweep: [10, 20, 30]            # top-K by mutual information, of 43 features
+  mi_rows_per_class: 500           # rows per class and client for the mutual information estimate
+  score_strength: [0, 1, 2, 4, 8, 16]   # adaptive gate; 0 is the fixed gate
+  gate_val_rows: 20000             # at most, per client and window: rows for choosing the strength
+  psi_flag_share: 0.10             # D8 sensitivity: M5's share of features over the PSI alert
+
 drift:                             # M5
   adwin_delta: 0.002
   shift_bins: 10

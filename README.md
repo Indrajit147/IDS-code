@@ -34,6 +34,7 @@ python scripts/m7_seeds.py --pool dev                                  # reports
 python scripts/m8_fedavg.py --pool dev --set resources.n_jobs=4        # E2, FedAvg + FedProx; reports/m8/dev/; --resume, --tag seed43; --only NAME, --report
 python scripts/m7_seeds.py --pool dev --milestone m8                   # reports/m8/dev/SEEDS.md
 python scripts/m8_lr_sweep.py --pool dev --lrs 0.03 0.1 --seeds 42 43   # choose lr on validation rows; reports/m8/<pool>/LR_SWEEP.csv
+python scripts/m9_e4.py --pool dev --set resources.n_jobs=4 --only NAME --resume   # E4, one pass per process (see the file's docstring); then --report; reports/m9/<pool>/
 ```
 
 On Kaggle, open `notebooks/kaggle_bootstrap.ipynb`. It clones this repo, installs it with `--no-deps`, and auto-discovers the attached data under `/kaggle/input`. The environment is detected automatically and can be forced with `IDS_ENV=local|kaggle`. The Kaggle dataset needs only the five files of `data/processed/`: `data_manifest.json`, `wifi_mqtt_full.parquet`, `wifi_mqtt_dev.parquet`, `wifi_profiling.parquet` and `ble.parquet`.
@@ -65,7 +66,7 @@ Rules:
 | M6  | Incremental local learning + rehearsal buffer      | DA-FedDistill step 1          | ✅ Done (dev + full) | 2026-11-06 |
 | M7  | DA-FedDistill (federated distillation)             | E3, novelty claim B           | ✅ Done (dev + full); acceptance met on the full pool's window average only, two seeds | 2026-11-06 |
 | M8  | Neural FL baselines (FedAvg / FedProx MLP)         | E2, baselines                 | ✅ Done: dev 3 seeds, full pool 2 seeds at lr 0.03, chosen on full-pool validation rows | 2026-11-07 |
-| M9  | Drift-triggered updates, feature selection, adaptive threshold | E4, Methodology Step 5 | ⬜ Not started | — |
+| M9  | Drift-triggered updates, feature selection, adaptive threshold | E4, Methodology Step 5 | 🟨 Dev done (one seed); full pool pending on Kaggle | — |
 | M10 | SHAP explainability (local + global store)         | Novelty claim C               | ⬜ Not started | — |
 | M11 | Cloud LLM verifier (gated, JSON-constrained)       | E5, E6, novelty claim A       | ⬜ Not started | — |
 | M12 | LLM adaptation-policy agent (training decisions)   | "What changes through LLM reasoning" | ⬜ Not started | — |
@@ -255,7 +256,7 @@ IDS-code/
 │   ├── llm/           # (planned) backend, prompts, schema, verifier, policy agent
 │   └── utils/         # seed, jsonl, config, run
 ├── scripts/                      # CLI entry points per milestone
-├── notebooks/                    # kaggle_bootstrap, m3_kaggle (M3 to M5), m6_kaggle, m7_kaggle, m8_kaggle, m8_dirty_check; later Notebook A (train/FL) and B (inference/LLM/XAI)
+├── notebooks/                    # kaggle_bootstrap, m3_kaggle (M3 to M5), m6_kaggle, m7_kaggle, m8_kaggle, m8_dirty_check, m9_kaggle; later Notebook A (train/FL) and B (inference/LLM/XAI)
 ├── tests/
 ├── reports/m<k>/                 # tracked milestone reports (EDA, figures, manifests)
 └── results/runs/<run_id>/        # untracked: config snapshot, metrics, logs, models
@@ -704,12 +705,13 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 
 ### M9: Drift-triggered updates, feature selection, adaptive threshold
 **Goal:** E4, drift-aware scheduling and feature focus, plus the gate's adaptive threshold.
-- [ ] Updates triggered by ADWIN instead of a fixed per-window schedule
-- [ ] Top-K features by mutual information per window (K sweep)
-- [ ] Sensitivity run (D8): a PSI-based drift flag in the gate against the proposal's rule, reported and not a headline
-- [ ] Drift score from cloud to edge (`Proposal explanation.docx`, Methodology Step 5: "The drift score is sent back to the edge so that an adaptive threshold can be used in the subsequent inference"): the cloud's ADWIN monitor turns each client's label-free ADWIN signals into a score, sent down with g_t and τ, and its bytes count in communication
-- [ ] Adaptive threshold: each client's τc and τd for the next window depend on its drift score, and a score of 0 gives exactly the fixed gate
-- [ ] Fixed against adaptive gate, on current-window and next-window rows: escalation rate, errors caught, accuracy on the rest, and whether it helps the t1 blind spot (D8), reported against the 10% target (D10)
+- [x] Updates triggered by ADWIN instead of a fixed per-window schedule (`scripts/m9_e4.py`)
+- [x] Top-K features by mutual information per window (K sweep)
+- [x] Sensitivity run (D8): a PSI-based drift flag in the gate against the proposal's rule, reported and not a headline
+- [x] Drift score from cloud to edge (`Proposal explanation.docx`, Methodology Step 5: "The drift score is sent back to the edge so that an adaptive threshold can be used in the subsequent inference"): the cloud's ADWIN monitor turns each client's label-free ADWIN signals into a score, sent down with g_t and τ, and its bytes count in communication
+- [x] Adaptive threshold: each client's τc and τd for the next window depend on its drift score, and a score of 0 gives exactly the fixed gate
+- [x] Fixed against adaptive gate, on current-window and next-window rows: escalation rate, errors caught, accuracy on the rest, and whether it helps the t1 blind spot (D8), reported against the 10% target (D10)
+- [ ] Full-pool run: `notebooks/m9_kaggle.ipynb`, each pass in its own process
 - **Acceptance:** E4 vs E3 comparison of time-to-recover and performance variance (tests H2), and the fixed vs adaptive gate comparison above.
 
 **Why the adaptive threshold is here (checked 2026-11-07).** Nothing built so far does this:
@@ -717,7 +719,57 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 - **M7:** the cloud re-picks τc and τd each window, on D_pub, for the escalation budget. They are one global pair and no drift score goes into the choice. M7's gate doesn't use a drift flag either.
 - **M7's drift features:** each client's PSI share is an input to g_t, so drift can move the probabilities and, through them, confidence. It doesn't move a threshold, and it is PSI, not the ADWIN score.
 
-**Choices the proposal leaves open (additions, to settle when M9 starts):** the proposal names the mechanism only, in that one sentence of the explanation document. The main proposal says the cloud sends "thresholds" and doesn't mention a drift score. So the score's definition, the rule from score to thresholds, and how strongly it acts are additions, and that strength is to be chosen on validation rows only. It may not help at t1, as the old model there is confidently wrong: its confidence would need a much higher τc, which would cost a lot of escalations. The comparison above reports what it does either way.
+**Design, fixed on 2026-11-07 before any E4 result (the user asked to start M9; the choices below are mine, and all but those marked as the proposal's are additions).**
+
+*What the proposal fixes:* E4 is DA-FedDistill with a "drift-triggered update schedule (ADWIN)" and "MI-driven top-K". ADWIN runs on the "rolling error rate for a client (when labels available in evaluation)" or on entropy or disagreement as a label-free proxy. Time-to-recover is "number of rounds/windows to return to within ε of pre-drift performance". H2 says ADWIN reduces time-to-recover and stabilizes variance across windows.
+
+*Schedule: updates inside a window.* E3 updates at every window, so a trigger at window level could only match it or lag behind it, and H2 could never hold, whatever the data showed. So a window's rows reach each client in 10 rounds, in random order, as the dataset has no timestamps. E3's schedule updates once, at the end of the window, and the old model serves until then. In E4:
+- each round is scored by the current model, and its signal feeds that client's ADWIN, which restarts after each update from the new model's own level on held-out new rows;
+- a rise triggers an update at once, on the rows held so far plus the buffer, and one more at the end of that window on the rest, so a triggered client has trained on the whole window by its end;
+- a client whose ADWIN stays quiet doesn't update and keeps its rows for its next update, which is where the saving comes from;
+- between its update and the next g_t, the client uses its own calibrated output, because the old g_t predates the new classes. The cloud refits g_t only at the end of a window, so mid-window cloud cost is not added.
+
+*Trigger signal: the error rate*, the first signal the proposal names. Clients train on these rows, so they have the labels, and on the full pool (M5) it catches all 33 affected clients with no false alarms, while disagreement catches 16. `e4_label_free` runs the same schedule on disagreement as a sensitivity run. M5 says it should stay silent at t1.
+
+*Top-K:* each client ranks features by mutual information on its own training rows, at each update (500 rows per class at most), and sends nothing. K is one of 10, 20 or 30 out of 43, picked on the fixed schedule by the best mean validation macro-F1 and repeated per seed. **It limits new trees only:** older trees keep their splits, so inference still needs all 43 features, and this is not a saving at inference. Continued boosting rules out dropping columns from the rows, as the old trees would then compute wrong margins. The script stops with an error if a new tree splits on a feature outside the set.
+
+*Passes, so each factor can be read alone:* `fixed` (no factor; must reproduce E3), `fixed_k*` (top-K only), `e4_schedule` (trigger only), `e4` (both; the headline, as E4 is defined with top-K even if all features score higher), `e4_label_free`. Each is also reported with `e3_guard`'s rule (D9), and without g_t.
+
+*Changed after the first dev run, before any full-pool result:*
+- **`e4_added` is a new pass.** H2 says "adding" drift-triggered adaptation, and the matrix says a drift-triggered schedule, so the proposal reads both ways. On dev, clients whose ADWIN stays quiet keep a stale model, which costs accuracy at the end of a window. In `e4_added` every client still updates at the end of each window and a trigger only adds an early update, at the cost of more updates. `e4` stays the headline, as the matrix's reading; which to carry forward is for the user to decide on the full-pool results.
+- **Recovery is also measured against E3's earlier score.** A method measured against its own earlier score looks recovered sooner if it has already fallen.
+- **`fixed gate at the same cost` is a new measure.** The strength rule keeps choosing λ = 0, as the fixed gate is already near 10% on next-window rows. The rule isn't changed. The new column shows whether the drift score catches more errors than a fixed gate loosened to the same escalation rate.
+- **Limiting XGBoost's new trees:** `feature_weights` is not absolute, as the script's check found in a real run, and `interaction_constraints` doesn't restrict features outside its sets (tested). An update that leaks a feature now trains again with another seed, so the limit is a hard one.
+- **A bug fixed in the PSI flag:** it compared CSV rows with a baseline that holds profiling rows, so it fired even with no shift (69% escalated at t0 on t0 rows).
+
+*H2's measures, fixed now:* per boundary, the share of the window's rounds until macro-F1 on that window's test rows is back within ε = 0.02 of the score before the boundary; macro-F1 averaged over the rounds; and the SD of window scores over t1 to t5. E3's curve comes from its M7 scores: the old model until the end of the window, then the new one. Window average, t5 and forgetting are also reported, as the trigger may cost accuracy, along with updates and communication. A client that didn't update resends predictions only for public rows new in that window.
+
+*Drift score (explanation document, Step 5):* for each client's inference stream, the largest rise ADWIN has reported so far on disagreement or entropy, in [0, 1], and 0 until then. It starts each new window at the value the last boundary ended on. It is ADWIN's estimate at the moment it fires, with old rows still in its window, so it understates the true rise. It adds 4 bytes per client per window to the downlink. No network delay is modelled.
+
+*Adaptive threshold:* with a = min(1, λ·score), τc' = τc + a(1 − τc) and τd' = τd(1 − a), so a score of 0 gives exactly the fixed gate, and a higher score only adds escalations (both are tested). τc and τd are still the cloud's values from M7.
+
+*Strength λ:* one of 0, 1, 2, 4, 8 or 16 for the whole run, with the most errors caught on held-out rows of the next window, with mean escalation at or under the 10% target (D10), ties to the weaker. If nothing fits, λ = 0. These rows are later training rows, which the model scoring them hasn't seen, and no test row is read. The test table shows every strength.
+
+*Gate modes on test rows:* `thresholds_only` (M7's gate), `fixed` (adds the proposal's ADWIN flag on disagreement, 200 rows, the headline under D8), `adaptive`, and `psi_flag` (D8's sensitivity run: a client's rows are all escalated when at least 10% of its features pass the PSI alert, as in M5). It may not help at t1, as the old model there is confidently wrong and M5 found ADWIN silent on these signals. The comparison reports what it does either way.
+
+**Results, dev pool (2026-11-07, seed 42 only)**: [`reports/m9/dev/E4.md`](reports/m9/dev/E4.md)
+
+- One seed on a 5% sample, so these are for checking the method, and the differences have no noise estimate. `fixed` reproduces M7's E3, guard and local rows with a difference of 0.0 in every window, and the reported scores match a recomputation from the confusion counts.
+- **Replacing the fixed schedule costs accuracy on dev:**
+
+  | method | window avg | final (t5) | SD, t1 to t5 | macro-F1 over rounds, mean of t1 to t5 | local updates | uplink, float32 (MB) |
+  |---|---:|---:|---:|---:|---:|---:|
+  | E3 | 0.9130 | 0.8768 | 0.0127 | 0.6267 | 90 | 22.6 |
+  | E4: trigger + top-30 | 0.8085 | 0.8081 | 0.1313 | 0.7855 | 97 | 13.3 |
+  | Trigger added to the fixed schedule, top-30 | 0.9079 | 0.8731 | 0.0135 | 0.8196 | 127 | 22.6 |
+  | Trigger on disagreement, all features | 0.6818 | 0.6517 | 0.1693 | 0.6108 | 58 | 10.4 |
+
+- **H2 is mixed so far.** Service during a window is clearly better with a trigger, as the old model isn't kept until the window ends. But apart from one case, no method gets back to E3's earlier score before the end of a window, so time-to-recover by that measure doesn't improve. The case is `e4` at t3, after one round, with rows it held back from t2 to train on. Variance across windows is about ten times worse with `e4`, and about the same with the trigger added.
+- **Why `e4` loses at window ends:** only 3 of 15 clients update at t2, 4 at t4 and 5 at t5, and the others keep older models. The likely reason, not tested: a new class that is a small share of a client's rows moves its error rate too little for ADWIN, while macro-F1 weighs that class fully. On the full pool, M5's error-rate ADWIN caught all 33 affected clients against 38 of 49 on dev, so this may not carry over.
+- **Label-free trigger:** 0 of 15 clients fire at t1, the same blind spot as D8, so the model stays at the old one's 0.451 for that whole window.
+- **Top-K costs a little and saves nothing measured here:** validation rises with K (0.9033, 0.9119, 0.9178), so 30, the top of the grid, is picked, and all 43 features score about the same (window average 0.9130 against 0.9127). Inference still needs all features.
+- **The drift score adds nothing clear:** the rule picks λ = 0 for `e4`, so the adaptive gate is the fixed gate there. On next-window test rows, at λ = 16 it catches 0.430 of errors at 26.4% escalated, and a fixed gate loosened to the same rate catches 0.420. On validation rows the order reverses (0.326 against 0.356). The score is silent at t1, so the blind spot stays: 0.019 of errors caught at 1.6% escalated.
+- **PSI flag (D8's sensitivity run):** it does see t1, catching 0.979 of errors, but by escalating 93.8% of rows, and at the later boundaries it escalates 9%, 49%, 34% and 63%, catching 21%, 66%, 52% and 80% of errors.
 
 ### M10: SHAP explainability
 **Goal:** two-tier explanations that are cheap enough to run.
@@ -799,5 +851,6 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 | 2026-11-07 | M8 full pool, first run | Kaggle at `285be6e`. Lr 0.1 from the dev sweep is unstable on the full pool: FedAvg 0.8267 and 0.6063 on window average across two seeds, collapsing on validation rows too. Kept in `reports/m8/full/lr0.1/`, not used as the result. Added a validation-only lr sweep on the full pool ahead of the final passes. |
 | 2026-11-07 | M8 ✅ | Kaggle at `cb9b1dc`, seeds 42 and 43. Lr 0.03 chosen on full-pool validation rows; lr 0.1's collapse reproduced. FedAvg 0.8434 ± 0.0029, FedProx 0.8425 ± 0.0021, no real difference between them; E3 0.9254, local 0.9209. Rehearsal doesn't help FedAvg. The gap mixes model family with federation, so the claim is about this MLP. |
 | 2026-11-07 | M8 check | Recomputed the M8 numbers from raw outputs: they match, apart from one rounding corrected in this README (0.0143 to 0.0142). The `git_dirty` flag on all Kaggle runs is not traced: added `notebooks/m8_dirty_check.ipynb` and a `git_changed` field to every run's `environment.json`. |
+| 2026-11-07 | M9 🟨 (dev) | E4 built: ADWIN trigger inside windows, top-K limiting new trees, drift score and adaptive gate, one seed on dev. `fixed` reproduces E3 exactly. Replacing the schedule scores 0.8085 against E3's 0.9130, adding the trigger to it 0.9079, and both serve much better during a window. The drift score adds nothing clear. Full pool next. |
 | 2026-11-07 | `git_dirty` traced | Kaggle check at `cb9b1dc`: the M2 step changes only three figure PNGs, which nothing reads, and the partition matches the local build row for row in all 6 files. Kaggle notebooks now restore those PNGs after M2. |
 | 2026-11-07 | M9 plan extended | Checked whether the drift-score adaptive threshold (explanation document, Methodology Step 5) exists. It doesn't: M5 has a hard flag, and M7 re-picks one global τ pair without a drift score. Added to M9, with a fixed vs adaptive gate comparison in its acceptance. |
