@@ -64,7 +64,7 @@ Rules:
 | M5  | Drift detection & uncertainty gate                 | ADWIN, PSI/KL/W, gate τc/τd   | ✅ Done (dev + full), acceptance partly met | 2026-11-04 |
 | M6  | Incremental local learning + rehearsal buffer      | DA-FedDistill step 1          | ✅ Done (dev + full) | 2026-11-06 |
 | M7  | DA-FedDistill (federated distillation)             | E3, novelty claim B           | ✅ Done (dev + full); acceptance met on the full pool's window average only, two seeds | 2026-11-06 |
-| M8  | Neural FL baselines (FedAvg / FedProx MLP)         | E2, baselines                 | 🟨 Dev done (3 seeds); first full-pool run unstable, rerun with lr chosen on the full pool pending | — |
+| M8  | Neural FL baselines (FedAvg / FedProx MLP)         | E2, baselines                 | ✅ Done: dev 3 seeds, full pool 2 seeds at lr 0.03, chosen on full-pool validation rows | 2026-11-07 |
 | M9  | Drift-triggered updates, feature selection, adaptive threshold | E4, Methodology Step 5 | ⬜ Not started | — |
 | M10 | SHAP explainability (local + global store)         | Novelty claim C               | ⬜ Not started | — |
 | M11 | Cloud LLM verifier (gated, JSON-constrained)       | E5, E6, novelty claim A       | ⬜ Not started | — |
@@ -615,7 +615,7 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 **Goal:** the classic FL references (E2).
 - [x] MLP in torch (CPU), same partitions and timeline (`src/ids/fl/fedavg.py`, `scripts/m8_fedavg.py`)
 - [x] FedAvg and FedProx (μ sweep), each with and without incremental training
-- [ ] Full-pool run: `notebooks/m8_kaggle.ipynb`, each pass in its own process. A first run at lr 0.1 was unstable (below); the notebook now chooses the rate on the full pool first
+- [x] Full-pool run: `notebooks/m8_kaggle.ipynb`, each pass in its own process. A first run at lr 0.1 was unstable (below), so the notebook chooses the rate on the full pool first
 - **Acceptance:** E2 results appear in the same table format as E3.
 
 **Results, dev pool (2026-11-06)**: [`reports/m8/dev/FEDAVG.md`](reports/m8/dev/FEDAVG.md), [`reports/m8/dev/SEEDS.md`](reports/m8/dev/SEEDS.md)
@@ -660,11 +660,43 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 - "None" in the proposal's E2 row is the t0 model, never updated. "Incremental" doesn't say whether to rehearse, so the headline matches E3 (new rows + buffer), and `fedavg_no_rehearsal` is an addition.
 - Lr and rounds above were chosen on the dev pool, for the dev pool. The full pool gets its own rate, as below.
 
+**Results, full pool (2026-11-07, Kaggle, seeds 42 and 43, lr 0.03)**: [`reports/m8/full/FEDAVG.md`](reports/m8/full/FEDAVG.md), [`reports/m8/full/SEEDS.md`](reports/m8/full/SEEDS.md), [`reports/m8/full/LR_SWEEP.csv`](reports/m8/full/LR_SWEEP.csv)
+
+- Run at `cb9b1dc`, 4 threads, 3 h 40 min in one notebook: 85 min for the sweep, then both seeds. Peak 4.5 GB of 31.3 GB, no crash, and the configs differ only in seed and rate. `git_dirty` is true, as on the earlier Kaggle runs.
+- **Rate, from validation rows only:**
+
+  | lr | mean best validation, seed 42 | seed 43 | mean |
+  |---:|---:|---:|---:|
+  | 0.003 | 0.8331 | 0.8322 | 0.8327 |
+  | 0.01 | 0.8334 | 0.8385 | 0.8359 |
+  | **0.03** | **0.8536** | **0.8498** | **0.8517** |
+  | 0.1 | 0.8397 | 0.7020 | 0.7709 |
+
+  Lr 0.1 repeated the first run's validation scores and round counts, including 0.466 at seed 43's t2, so that collapse is reproducible and not a one-off. At 0.03 none of the 12 passes collapses. This is a coarse grid and two seeds, so 0.03 is the best tested rate, not a proven optimum, and how close it sits to the unstable region is not known. The rate was tuned on FedAvg only and FedProx reuses it.
+- **E2 is well below E3 on the full pool too:**
+
+  | method | window avg | final (t5) | class forgetting |
+  |---|---:|---:|---:|
+  | FedAvg, incremental | 0.8434 ± 0.0029 | 0.7816 ± 0.0014 | 0.0695 ± 0.0025 |
+  | FedAvg, no rehearsal (addition) | 0.8456 ± 0.0042 | 0.7926 ± 0.0060 | 0.0676 ± 0.0098 |
+  | FedProx, μ picked on validation | 0.8425 ± 0.0021 | 0.7813 ± 0.0007 | 0.0755 ± 0.0119 |
+  | FedAvg, t0 model never updated | 0.3704 ± 0.0023 | 0.1327 ± 0.0024 | n/a |
+  | E3 DA-FedDistill (M7) | 0.9254 ± 0.0004 | 0.8948 ± 0.0001 | 0.0268 ± 0.0032 |
+  | Local + rehearsal (M6) | 0.9209 ± 0.0000 | 0.8968 ± 0.0005 | 0.0215 ± 0.0005 |
+
+- FedAvg trails E3 by 0.0802 and 0.0838 on window average and by 0.1120 and 0.1143 at t5. At t5 on seed 42 the gap is widest on DoS (0.570 against 0.776) and spoofing (0.523 against 0.769).
+- **This doesn't show that distillation beats FedAvg.** Local boosters with no federation are just as far ahead (0.0755 and 0.0795), as on dev. The comparison mixes the model family with the federation method, and only the rate of this MLP was tuned on the full pool, so the claim stays "this MLP".
+- **FedAvg and FedProx can't be separated.** FedAvg minus FedProx is +0.0045 at seed 42 and -0.0027 at seed 43, and the picked μ differs (0.01, then 0.001). Stronger μ is clearly worse: 0.8261 at 0.1 and 0.8108 at 1. FedProx's lead on dev (0.8236 against 0.8156) doesn't hold here.
+- **Rehearsal doesn't help FedAvg.** No rehearsal is ahead on both seeds, by 0.0031 and 0.0012 on window average and 0.0143 and 0.0078 at t5. Dev showed no difference, and neither does M6's naive incremental row (0.9211 against 0.9210, seed 42). The cause isn't tested.
+- **Communication:** FedAvg sends 227.9 and 186.8 MB up and down over the run, as float32 (133 and 109 rounds), and the difference is only early stopping. E3 at seed 42 sends 338.6 MB up as float32, or 16.6 MB as 8-bit + zlib, and 35.3 kB down. FedAvg's weights weren't compressed, so 16.6 MB against about 200 MB isn't like for like, and uncompressed E3 uploads more than FedAvg.
+- Training is steady across seeds but early stopping isn't: rounds per window range from 6 to 42, and at seed 42's t4 the first round of the window is the best one. Scores don't show a collapse from this.
+- **Acceptance met:** E2 is in the same table format as E3, on the same partitions, test rows and buffers.
+
 **First full-pool run, not the result (2026-11-07, Kaggle, seeds 42 and 43, lr 0.1)**: [`reports/m8/full/lr0.1/SEEDS.md`](reports/m8/full/lr0.1/SEEDS.md), [`reports/m8/full/lr0.1/FEDAVG.md`](reports/m8/full/lr0.1/FEDAVG.md)
 
 - Run at `285be6e`, 54 and 61 min, with no crash and no config difference other than the seed. **Training is unstable at this rate, so these scores don't measure FedAvg fairly.** FedAvg gets 0.8267 and 0.6063 on window average. At seed 43's t2 it falls to 0.292, with its best round at 0, and doesn't recover. Without rehearsal it reaches 0.4408 and 0.3854, with F1 0.000 on benign at seed 42's t5. FedProx at μ 0.001 falls to 0.597 at seed 42's t4.
 - **The validation rows show the same collapse** (0.466 at seed 43's t2, against about 0.82 in the stable passes), so this is a training failure and not a problem in the test rows or the report.
-- **The likely cause, not yet tested:** the full pool has 11 to 18 times the rows per window, so a round has that many more SGD steps than on dev, where lr 0.1 was chosen. The early stopping also can't go back to the model a window started from, so a collapse in the first rounds is kept and carries into the next window.
+- **The likely cause, supported but not isolated by the sweep above (a lower rate removes the collapse; step count itself wasn't varied):** the full pool has 11 to 18 times the rows per window, so a round has that many more SGD steps than on dev, where lr 0.1 was chosen. The early stopping also can't go back to the model a window started from, so a collapse in the first rounds is kept and carries into the next window.
 - **FedAvg vs FedProx can't be read from this run.** FedProx at μ 0.01 gets 0.8340 ± 0.0025 and looks far ahead of FedAvg's 0.7165 ± 0.1558, but μ 0.001 and FedAvg fail at random, and μ 0.01 is too weak a pull for this to be clearly the proximal term at work. Even so, every stable pass is about 0.09 or more below E3 (0.9254).
 - **The fix:** `scripts/m8_lr_sweep.py` runs FedAvg at lr 0.003, 0.01, 0.03 and 0.1 on seeds 42 and 43, and takes the highest mean validation score over windows and seeds. The rule was fixed after seeing this run, but before any result at the other rates, and it reads no test rows. `notebooks/m8_kaggle.ipynb` then runs all passes at that rate.
 
@@ -763,4 +795,5 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 | 2026-11-06 | D8, D10 decided | The user asked for the recommended options. D8: the headline gate keeps the proposal's rule, and a PSI flag becomes a sensitivity run in M9. D10: 10% stays the headline operating point, as a tuning target and not a cap, with the frontier reported. The M6 comparison at full-pool seed 43 isn't needed. |
 | 2026-11-06 | M8 🟨 (dev) | FedAvg and FedProx on an MLP, 3 seeds. FedAvg 0.8156 and FedProx 0.8236 on window average, against E3 0.9125; 0.34 without updates. Acceptance met. Local-only is just as far ahead, so this doesn't isolate distillation as the cause. Lr 0.1 chosen on validation rows. Full-pool notebook ready, not yet run. 89 tests pass. |
 | 2026-11-07 | M8 full pool, first run | Kaggle at `285be6e`. Lr 0.1 from the dev sweep is unstable on the full pool: FedAvg 0.8267 and 0.6063 on window average across two seeds, collapsing on validation rows too. Kept in `reports/m8/full/lr0.1/`, not used as the result. Added a validation-only lr sweep on the full pool ahead of the final passes. |
+| 2026-11-07 | M8 ✅ | Kaggle at `cb9b1dc`, seeds 42 and 43. Lr 0.03 chosen on full-pool validation rows; lr 0.1's collapse reproduced. FedAvg 0.8434 ± 0.0029, FedProx 0.8425 ± 0.0021, no real difference between them; E3 0.9254, local 0.9209. Rehearsal doesn't help FedAvg. The gap mixes model family with federation, so the claim is about this MLP. |
 | 2026-11-07 | M9 plan extended | Checked whether the drift-score adaptive threshold (explanation document, Methodology Step 5) exists. It doesn't: M5 has a hard flag, and M7 re-picks one global τ pair without a drift score. Added to M9, with a fixed vs adaptive gate comparison in its acceptance. |

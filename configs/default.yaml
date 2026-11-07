@@ -115,7 +115,7 @@ fedavg:                            # M8; these settings are assumptions, the pro
   patience: 5
   local_epochs: 1
   batch: 512
-  lr: 0.1                          # best validation macro-F1 in the dev sweep, seed 42 (README, M8)
+  lr: 0.1                          # dev pool, from the dev sweep; the full pool needs 0.03 (fedavg.lr=0.03, reports/m8/full/LR_SWEEP.csv)
   momentum: 0.9
   mu_sweep: [0.001, 0.01, 0.1, 1.0]   # FedProx
 
