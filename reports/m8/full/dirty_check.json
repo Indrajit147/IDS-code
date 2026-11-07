@@ -1,0 +1,59 @@
+{
+ "commit": "cb9b1dca37b21603218633d268fccd83bb5d6d93",
+ "status": {
+  "after_clone": [],
+  "after_pip_install": [],
+  "after_m2": [
+   " M reports/m2/full/client_class_share.png",
+   " M reports/m2/full/client_jsd.png",
+   " M reports/m2/full/window_class_counts.png"
+  ]
+ },
+ "m2_exit_code": 0,
+ "m2_log_tail": "[full] csv=8775013 (dups 7379) profiling=361081 ble=1532922\n[full/category_intro] assigned=9038114 dpub=90429 jsd=[0.1673, 0.1954, 0.1971, 0.2032, 0.2035, 0.1996] (70s)\n[full/alt_order] assigned=9038114 dpub=90429 jsd=[0.1588, 0.1684, 0.2062, 0.2065, 0.2095, 0.203] (78s)\n",
+ "numstat": [
+  "-\t-\treports/m2/full/client_class_share.png",
+  "-\t-\treports/m2/full/client_jsd.png",
+  "-\t-\treports/m2/full/window_class_counts.png"
+ ],
+ "text_diff": "",
+ "partition": {
+  "category_intro/assignments.parquet": {
+   "rows": 9038114,
+   "same_as_local": true,
+   "fingerprint": "1df03190eb7f3d8d23bf384bc9c67e156b5cbdff9190a6b33291d96fdae1f18b"
+  },
+  "category_intro/dpub.parquet": {
+   "rows": 90429,
+   "same_as_local": true,
+   "fingerprint": "db865144c44877117d5c40eae8fc99740f6c00cdc3bf8f28c47b50fbbd54862f"
+  },
+  "category_intro/ble_assignments.parquet": {
+   "rows": 1532922,
+   "same_as_local": true,
+   "fingerprint": "55d5b45b78333ad662a482fca4844928979938533743deaa55878ca6c152d0d4"
+  },
+  "alt_order/assignments.parquet": {
+   "rows": 9038114,
+   "same_as_local": true,
+   "fingerprint": "15c8b3adb3f50e8f2f6ff683d5032878afdfa12960dcecea9bae14e7ffc02124"
+  },
+  "alt_order/dpub.parquet": {
+   "rows": 90429,
+   "same_as_local": true,
+   "fingerprint": "98b7f63cdd84ee09493035ae4c8b1e69807710d09e9cfdd9fcada3c952d54758"
+  },
+  "alt_order/ble_assignments.parquet": {
+   "rows": 1532922,
+   "same_as_local": true,
+   "fingerprint": "55d5b45b78333ad662a482fca4844928979938533743deaa55878ca6c152d0d4"
+  }
+ },
+ "packages": {
+  "numpy": "2.1.3",
+  "pandas": "2.3.3",
+  "pyarrow": "23.0.1",
+  "matplotlib": "3.10.0"
+ },
+ "python": "3.13.18"
+}
