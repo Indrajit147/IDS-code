@@ -56,6 +56,7 @@ def environment_info(env: str) -> dict:
         "packages": pkgs,
         "git_commit": _git("rev-parse", "HEAD"),
         "git_dirty": bool(status) if status is not None else None,
+        "git_changed": status.splitlines() if status else [],
     }
 
 
