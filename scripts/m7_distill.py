@@ -92,6 +92,10 @@ class Clients:
         cap = self.cfg["drift"]["shift_max_rows"]
         return X if len(X) <= cap else X[rng(self.seed, "m7_shift", *key).choice(len(X), cap, replace=False)]
 
+    def allowed_features(self, c, t, X, y):
+        """All features here; M9 narrows this to the top-K."""
+        return None
+
     def step(self, t: int) -> None:
         dc = self.cfg["drift"]
         for i, c in enumerate(self.ids):
@@ -102,7 +106,7 @@ class Clients:
             else:
                 X, y = Xn, yn
             vm = val_split(y, self.cfg["models"]["val_frac"], self.seed, ("m6", LOCAL, c, t))
-            self.models[c].update(X[~vm], y[~vm], X[vm], y[vm])
+            self.models[c].update(X[~vm], y[~vm], X[vm], y[vm], allowed=self.allowed_features(c, t, X[~vm], y[~vm]))
             self.buffers[c].add(Xn, yn)
             comps = self.models[c].predict_components(X[vm])
             self.reliability[i] = reliability_from_val(y[vm], comps["calibrated"].argmax(1), len(CATEGORIES))
@@ -129,8 +133,8 @@ def _apply_g(cal, name, px, pl, client_shift) -> np.ndarray:
     return cal.predict(px, pl, drift_signals(px, pl, client_shift) if use_drift else None)
 
 
-def fit_variants(cfg, t, clients, pub, y_pub) -> tuple:
-    """Steps 3 and 4 for every variant, on one shared sample of (client, public row) pairs."""
+def fit_variants(cfg, t, clients, pub, y_pub, only=None) -> tuple:
+    """Steps 3 and 4 for every variant (or those named in only), on one shared sample of (client, public row) pairs."""
     dc = cfg["distill"]
     k, ids = len(CATEGORIES), clients.ids
     n_rows, n_cl = pub["xgb"].shape[1], len(ids)
@@ -144,6 +148,8 @@ def fit_variants(cfg, t, clients, pub, y_pub) -> tuple:
     px8, pl8 = dequantize(quantize(px)), dequantize(quantize(pl))
     cals = {}
     for name, (agg, balanced, use_drift, q8) in VARIANTS.items():
+        if only and name not in only:
+            continue
         q = cons8 if q8 else cons[agg]
         a, b = (px8, pl8) if q8 else (px, pl)
         extra = drift_signals(a, b, shift) if use_drift else None

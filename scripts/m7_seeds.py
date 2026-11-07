@@ -11,7 +11,7 @@ import numpy as np
 
 from ids.utils.config import REPO_ROOT
 
-BASE = {"m7": "local_rehearsal", "m8": "e3"}   # what each milestone compares against
+BASE = {"m7": "local_rehearsal", "m8": "e3", "m9": "e3"}   # what each milestone compares against
 
 
 def main() -> None:

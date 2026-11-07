@@ -4,6 +4,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from .adwin import detect
+
 
 def gate_signals(components: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
     """Per-flow label-free signals from EdgeEnsemble.predict_components, all in [0, 1]."""
@@ -26,6 +28,38 @@ def drift_state(n: int, fire_positions: list[int], hold: int) -> np.ndarray:
     for pos in fire_positions:
         state[pos + 1:pos + 1 + hold] = True
     return state
+
+
+def drift_score(streams: list[np.ndarray], n_pre: int, delta: float) -> tuple[np.ndarray, list[int]]:
+    """Per post-boundary row: the largest rise ADWIN has reported so far on any label-free stream, in [0, 1], 0 until then.
+
+    A row's own value can't move its score. Returns the score and the post-boundary positions of the first stream's detections."""
+    score, fires = np.zeros(len(streams[0]) - n_pre), []
+    for i, values in enumerate(streams):
+        for pos, change in detect(values, delta):
+            if pos < n_pre:
+                continue
+            if i == 0:
+                fires.append(pos - n_pre)
+            if change > 0:
+                score[pos - n_pre + 1:] = np.maximum(score[pos - n_pre + 1:], min(change, 1.0))
+    return score, fires
+
+
+def adaptive_taus(tau_c: float, tau_d: float, score: np.ndarray, strength: float) -> tuple[np.ndarray, np.ndarray]:
+    """Thresholds per flow. A score or strength of 0 gives exactly (tau_c, tau_d); a higher one escalates more."""
+    a = np.minimum(strength * np.asarray(score, dtype=float), 1.0)
+    return tau_c + a * (1 - tau_c), tau_d * (1 - a)
+
+
+def same_cost_mask(conf: np.ndarray, other: np.ndarray, rate: float) -> np.ndarray:
+    """The fixed gate at a given escalation rate: rows already flagged by other, then the lowest confidence until the rate is met."""
+    mask = other.copy()
+    extra = int(round(rate * len(conf))) - int(mask.sum())
+    if extra > 0:
+        free = np.flatnonzero(~mask)
+        mask[free[np.argsort(conf[free], kind="stable")[:extra]]] = True
+    return mask
 
 
 def gate_outcome(mask: np.ndarray, errors: np.ndarray) -> dict:
