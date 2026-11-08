@@ -1,0 +1,45 @@
+setting,eval_window,method,overrides,fixed,broke
+boundary,1,e5,0,0,0
+boundary,1,e5_free,16,2,1
+boundary,1,e6,0,0,0
+boundary,1,e6_free,37,0,28
+boundary,2,e5,19,2,3
+boundary,2,e5_free,395,96,219
+boundary,2,e6,5,1,0
+boundary,2,e6_free,378,33,294
+boundary,3,e5,178,20,40
+boundary,3,e5_free,1005,93,550
+boundary,3,e6,59,3,11
+boundary,3,e6_free,408,21,258
+boundary,4,e5,95,12,51
+boundary,4,e5_free,394,54,246
+boundary,4,e6,26,4,7
+boundary,4,e6_free,387,19,316
+boundary,5,e5,23,3,11
+boundary,5,e5_free,385,115,203
+boundary,5,e6,8,1,4
+boundary,5,e6_free,401,26,348
+own window,0,e5,0,0,0
+own window,0,e5_free,14,3,11
+own window,0,e6,0,0,0
+own window,0,e6_free,68,1,67
+own window,1,e5,0,0,0
+own window,1,e5_free,327,105,179
+own window,1,e6,0,0,0
+own window,1,e6_free,354,29,308
+own window,2,e5,14,2,8
+own window,2,e5_free,418,103,231
+own window,2,e6,0,0,0
+own window,2,e6_free,433,34,365
+own window,3,e5,79,16,47
+own window,3,e5_free,331,69,200
+own window,3,e6,15,2,9
+own window,3,e6_free,411,19,367
+own window,4,e5,12,2,8
+own window,4,e5_free,359,84,200
+own window,4,e6,5,0,2
+own window,4,e6_free,442,16,392
+own window,5,e5,24,6,15
+own window,5,e5_free,391,59,226
+own window,5,e6,7,2,3
+own window,5,e6_free,435,11,388

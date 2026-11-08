@@ -40,7 +40,8 @@ from ids.utils.run import memory_note   # noqa: E402
 PASS = "e4_added"   # D11
 
 
-def fit(cfg, pool, tag, models_dir, rep, log) -> dict:
+def fit(cfg, pool, tag, models_dir, rep, log, hook=None) -> dict:
+    """models_dir None: keep no models. hook: passed to M9's gate (M11)."""
     tl, feats, target = cfg["timeline"]["headline"], model_features(cfg), cfg["labels"]["headline_target"]
     m9 = json.loads((REPO_ROOT / "reports" / "m9" / pool / (tag or "") / "summary.json").read_text(encoding="utf-8"))
     k = m9["k"]
@@ -55,8 +56,9 @@ def fit(cfg, pool, tag, models_dir, rep, log) -> dict:
     X_pub, y_pub, intro = dp[feats].to_numpy(np.float32), dp[target].to_numpy().astype(np.int64), dp["intro_window"].to_numpy()
     del dp
     log.info("rows loaded, K = %d from M9's report: %s", k, memory_note())
-    models_dir.mkdir(parents=True, exist_ok=True)
-    run_pass(cfg, PASS, window_rows, X_pub, y_pub, intro, ev, log, k=k, save=models_dir)
+    if models_dir is not None:
+        models_dir.mkdir(parents=True, exist_ok=True)
+    run_pass(cfg, PASS, window_rows, X_pub, y_pub, intro, ev, log, k=k, save=models_dir, hook=hook)
     now = ev.summary(PASS, HEADLINE, eps=cfg["eval"]["recover_eps"])["macro_f1_by_window"]
     then = next(s for s in m9["summaries"] if s["method"] == PASS)["macro_f1_by_window"]
     check = {"k": k, "by_window": {int(t): {"m10": float(now[int(t)]), "m9": float(v), "difference": float(now[int(t)] - v)} for t, v in then.items()}}

@@ -147,10 +147,16 @@ gate:                              # M5; tuned values are written to reports/m5/
   drift_signal: disagreement       # label-free ADWIN signal behind the gate's drift flag
   drift_hold_rows: 200             # flows escalated after each detection
 
-llm:                               # M11
-  backend: none                    # none | hf_local | llama_cpp | api
-  model_id: google/gemma-2-2b-it
-  quantization: 4bit
+llm:                               # M11; the proposal names the models and 4/8-bit loading, the rest are assumptions (README, M11)
+  backend: stub                    # stub (rule-based stand-in, not an LLM: tests and dev) | hf (transformers on a GPU)
+  model_id: google/gemma-2-2b-it   # or a local path, e.g. a Kaggle model input
+  quantization: 4bit               # 4bit (NF4) | 8bit | none
+  compute_dtype: float16           # the T4 has no bfloat16
+  batch_size: 16
+  max_new_tokens: 256
+  max_retries: 2                   # after the first reply; then the fallback (no override, SHAP only)
+  rows_per_client: 500             # uniform sample of CSV test rows per client and evaluation window
+  always_on_rows: 50               # E6: the first rows of that sample, sent to the LLM whatever the gate says
 
 explain:                           # M10; the proposal fixes none of these (README, M10)
   rows_per_client: 1000            # uniform sample of CSV test rows per client and window

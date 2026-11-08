@@ -211,8 +211,9 @@ def client_streams(cfg, models, ids, rows_pre, rows_post, carry, key) -> dict:
     return {"streams": out, "carry": new_carry}
 
 
-def run_pass(cfg, name, window_rows, X_pub, y_pub, intro, ev, log, k=None, save=None) -> dict:
-    """save: a folder for each window's client models (M10 explains them); it doesn't change any result."""
+def run_pass(cfg, name, window_rows, X_pub, y_pub, intro, ev, log, k=None, save=None, hook=None) -> dict:
+    """save: a folder for each window's client models (M10 explains them); hook: called with the gate's inputs (M11).
+    Neither changes any result."""
     sc, trigger = cfg["schedule"], {"e4": "error", "e4_added": "error", "e4_schedule": "error", "e4_label_free": "disagreement"}.get(name)
     clients = StreamClients(cfg, window_rows, k=k, trigger=trigger, end_all=name == "e4_added")
     out = {"comm": [], "gate": [], "gate_val": [], "curves": [], "fit": [], "val": [], "k": k}
@@ -278,7 +279,7 @@ def run_pass(cfg, name, window_rows, X_pub, y_pub, intro, ev, log, k=None, save=
             s = nxt.source == SRC_CSV
             cold_prev = predict(nxt.X, nxt.client)["global"][s].argmax(1).astype(np.int8)
         if name in GATE_PASSES:
-            carry_test = gate_on_test(cfg, clients, t, tau, predict, memo, tests, carry_test, out)
+            carry_test = gate_on_test(cfg, clients, t, tau, predict, memo, tests, carry_test, out, hook)
         memo.clear()
         if save is not None:
             (save / f"t{t}.pkl").write_bytes(pickle.dumps(clients.models))
@@ -319,7 +320,7 @@ def gate_on_validation(cfg, clients, t, tau, cal, temps, carry, out, log) -> dic
     return st["carry"]
 
 
-def gate_on_test(cfg, clients, t, tau, predict, memo, tests, carry, out) -> dict:
+def gate_on_test(cfg, clients, t, tau, predict, memo, tests, carry, out, hook=None) -> dict:
     """The gate with one model, on its own window's rows and on the next window's. Thresholds come from the cloud (M7)."""
     sc, dc, new_carry = cfg["schedule"], cfg["drift"], dict(carry)
     for w in [t, t + 1]:
@@ -352,6 +353,8 @@ def gate_on_test(cfg, clients, t, tau, predict, memo, tests, carry, out) -> dict
             mask = escalate(conf, dis, tc, td, hold)
             same = same_cost_mask(conf, (dis > tau["tau_d"]) | hold, float(mask.mean()))
             out["gate"].append({**row, "mode": "fixed" if strength == 0 else "adaptive", "strength": strength, **gate_outcome(mask, err), "fixed_same_cost_capture": gate_outcome(same, err)["error_capture"]})
+        if hook is not None:   # rows in stream order, client by client
+            hook(t=t, w=w, idx=idx, p=p[idx], xgb=mem["xgb"][idx], lgb=mem["lgb"][idx], score=score, hold=hold, tau=tau, models=clients.models)
     return new_carry
 
 

@@ -36,6 +36,7 @@ python scripts/m7_seeds.py --pool dev --milestone m8                   # reports
 python scripts/m8_lr_sweep.py --pool dev --lrs 0.03 0.1 --seeds 42 43   # choose lr on validation rows; reports/m8/<pool>/LR_SWEEP.csv
 python scripts/m9_e4.py --pool dev --set resources.n_jobs=4 --only NAME --resume   # E4, one pass per process (see the file's docstring); then --report; reports/m9/<pool>/
 python scripts/m10_shap.py --pool dev --set resources.n_jobs=4               # TreeSHAP of e4_added (D11); --only fit|shap; reports/m10/<pool>/
+python scripts/m11_verify.py --pool dev --set resources.n_jobs=4             # LLM verifier (stub locally; llm.backend=hf on a GPU); --only fit|llm; reports/m11/<pool>/
 ```
 
 On Kaggle, open `notebooks/kaggle_bootstrap.ipynb`. It clones this repo, installs it with `--no-deps`, and auto-discovers the attached data under `/kaggle/input`. The environment is detected automatically and can be forced with `IDS_ENV=local|kaggle`. The Kaggle dataset needs only the five files of `data/processed/`: `data_manifest.json`, `wifi_mqtt_full.parquet`, `wifi_mqtt_dev.parquet`, `wifi_profiling.parquet` and `ble.parquet`.
@@ -69,7 +70,7 @@ Rules:
 | M8  | Neural FL baselines (FedAvg / FedProx MLP)         | E2, baselines                 | ✅ Done: dev 3 seeds, full pool 2 seeds at lr 0.03, chosen on full-pool validation rows | 2026-11-07 |
 | M9  | Drift-triggered updates, feature selection, adaptive threshold | E4, Methodology Step 5 | ✅ Done (dev + full, two seeds); `e4_added` carried forward (D11) | — |
 | M10 | SHAP explainability (local + global store)         | Novelty claim C               | ✅ Done (dev one seed, full pool two seeds) | 2026-11-08 |
-| M11 | Cloud LLM verifier (gated, JSON-constrained)       | E5, E6, novelty claim A       | ⬜ Not started | — |
+| M11 | Cloud LLM verifier (gated, JSON-constrained)       | E5, E6, novelty claim A       | 🟨 Built and checked on dev with a stub; full pool with Gemma 2 2B pending on Kaggle | — |
 | M12 | LLM adaptation-policy agent (training decisions)   | "What changes through LLM reasoning" | ⬜ Not started | — |
 | M13 | Federated GBDT baseline (stretch)                  | E7                            | ⬜ Not started | — |
 | M14 | Full experiment matrix, ablations & sensitivity    | E1–E7, ablations, H1–H4       | ⬜ Not started | — |
@@ -258,7 +259,7 @@ IDS-code/
 │   ├── llm/           # (planned) backend, prompts, schema, verifier, policy agent
 │   └── utils/         # seed, jsonl, config, run
 ├── scripts/                      # CLI entry points per milestone
-├── notebooks/                    # kaggle_bootstrap, m3_kaggle (M3 to M5), m6_kaggle, m7_kaggle, m8_kaggle, m8_dirty_check, m9_kaggle, m10_kaggle; later Notebook A (train/FL) and B (inference/LLM/XAI)
+├── notebooks/                    # kaggle_bootstrap, m3_kaggle (M3 to M5), m6_kaggle, m7_kaggle, m8_kaggle, m8_dirty_check, m9_kaggle, m10_kaggle, m11_kaggle; later Notebook A (train/FL) and B (inference/LLM/XAI)
 ├── tests/
 ├── reports/m<k>/                 # tracked milestone reports (EDA, figures, manifests)
 └── results/runs/<run_id>/        # untracked: config snapshot, metrics, logs, models
@@ -858,11 +859,45 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
   (a) Kaggle GPU with Gemma-2-2B-it or Mistral-7B-Instruct and 4/8-bit bitsandbytes (as in the proposal),
   (b) local CPU via llama.cpp or Ollama with a quantized small model (slow but free),
   (c) a hosted API (fast, but it costs money and data leaves the machine)
-- [ ] Evidence payload: probabilities, disagreement, top-k SHAP, class centroids/priors, drift state
-- [ ] JSON schema: `final_label`, `override_edge`, `confidence_bucket`, `reasons[]`, `feature_recommendations[]`, `safety_notes`; validate → retry → fall back to "no override + SHAP-only"
-- [ ] Override policy D3; every prompt, output, parse failure and retry logged to JSONL
-- [ ] E5 (gated) and E6 (always-on vs gated) cost–accuracy frontier
+- [x] Evidence payload: probabilities, disagreement, top-k SHAP, class centroids/priors, drift state (`scripts/m11_verify.py`)
+- [x] JSON schema: `final_label`, `override_edge`, `confidence_bucket`, `reasons[]`, `feature_recommendations[]`, `safety_notes`; validate → retry → fall back to "no override + SHAP-only" (`src/ids/llm/verifier.py`)
+- [x] Override policy D3; every prompt, output, parse failure and retry logged to JSONL
+- [ ] E5 (gated) and E6 (always-on vs gated) cost–accuracy frontier: full pool on Kaggle (`notebooks/m11_kaggle.ipynb`, seeds 42 and 43)
 - **Acceptance:** at least 99% of outputs pass schema validation after retries; FP rate change in drift windows (H3); LLM calls per 1k samples and latency reported.
+
+**Design, fixed on 2026-11-08 before any M11 result (the user asked to start M11; the choices below are mine unless marked as the proposal's).**
+
+*What the proposal fixes:* the LLM is "not trained and not used for continuous learning". It verifies escalated samples, checking the edge's class against "top SHAP features and their signed contributions", "neighbor summaries (e.g., nearest centroid statistics per class)", and "drift state flags and class priors in the current window". It must answer in JSON (`final_label`, `override_edge`, `confidence_bucket`, `reasons`, `feature_recommendations`, `safety_notes`). On a parse failure it retries "with a stricter prompt", otherwise it falls back to "no override + SHAP-only explanation". Overrides "must be conservative (only in high-disagreement + drift-flag situations) and always logged" (D3). Every prompt and output, parse failure and retry count goes to append-only JSONL. Models: Gemma 2 2B instruct by default on GPU with 8-bit or 4-bit bitsandbytes, and Mistral 7B Instruct v0.2 "for a smaller subset". E5 is gated and E6 compares always-on with gated. Metrics: LLM latency (mean and P95), LLM calls per 1k samples, and payload per escalation. H3: fewer false positives in high-drift windows.
+
+*Edge and gate:* E4 as carried forward (D11, `e4_added`), with its cloud calibration g_t and thresholds. M9 keeps neither, so `scripts/m11_verify.py` reruns the `e4_added` pass with M9's code and K (as M10 does), checks its scores against M9's report, and captures the gate's inputs as the pass runs. A hook in M9's gate code reads them, so no result changes. The gate is E4's: the cloud's τc and τd, the ADWIN drift flag, and the adaptive threshold at the strength M9 picked for `e4_added` (8 on the full pool, 0 on dev). It runs on every CSV test row of the stream, as in M9, in two settings: the model on its own window's rows, and the model through t−1 on window t's rows (the boundary, where the drift is).
+
+*Rows sent to the LLM:* a 2B model can't verify every escalated row of the full test set within Kaggle's GPU time. So the evaluation uses a uniform random sample of up to 500 CSV test rows per client and evaluation window, drawn without labels after the gate has run on the full stream. E5 sends every escalated row of the sample to the LLM. E6 sends the first 50 sampled rows per client and window, escalated or not, and is compared with E5 on those same rows. The gate's escalation rate and calls per 1k are also measured on the full stream.
+
+*Evidence payload (cloud side):* the edge's class and its six g_t probabilities, each booster's class, XGBoost–LightGBM disagreement, the top 5 features by exact TreeSHAP (M10's attribution, for the class the edge predicts) with their signed values and the row's feature values, and these:
+- **Class centroids:** for those 5 features, the median of each known class on D_pub, by pseudo-label. The pseudo-label is the mean of the clients' calibrated outputs, as in the proposal's distillation step 3, so the labels of D_pub stay unused.
+- **Class priors:** the share of each class the edge predicted on the client's earlier rows in that window's stream, using only rows before this one.
+- **Drift state:** the ADWIN drift flag, and the drift score.
+
+SHAP is computed only for rows sent to the LLM.
+
+*Output contract:* JSON only. `final_label` must be one of the six classes, and `override_edge` must equal "final_label differs from the edge's class". `confidence_bucket` is low, medium or high. `reasons` holds 1 to 3 strings and `feature_recommendations` 0 to 5 names of model features. `safety_notes` is a string. A reply that fails any check is retried up to 2 times, with the error stated and a stricter instruction. After that the fallback applies. Decoding is greedy (no sampling), so a rerun gives the same output on the same hardware.
+
+*Override policy (D3):* the LLM's class replaces the edge's only if `override_edge` is true, the two boosters predict different classes ("high disagreement"), and a drift flag is on: ADWIN fired within the last 200 flows, or the drift score is above 0. Using the boosters' classes, not τd, is my reading of "high disagreement", because τd is 1.01 (the test switched off) in several full-pool windows. As an ablation, `llm_free` takes the LLM's class whenever its reply is valid, which shows what D3 holds back.
+
+*Metrics, on the sampled rows, paired with the edge on the same rows:* macro-F1 over the classes present; the false-positive rate (benign rows called an attack) and the miss rate (attack rows called benign); overrides that fix an edge error and overrides that break a correct label; valid replies on the first try and after retries; payload bytes; LLM latency per batch (mean and P95, which is what a request waits) and rows per second; and calls per 1k rows, on the full stream for E5 and 1,000 for E6. "High-drift windows" for H3 are the boundary rows, the model through t−1 on window t. H4 has no measure in the proposal and isn't tested here.
+
+*Backends:* `stub` is a rule-based stand-in (nearest centroid on the top features) for tests and the local dev run. It is not an LLM and its numbers are not results. `hf` is transformers on Kaggle's GPU: Gemma 2 2B instruct with 4-bit NF4 and float16 compute (the T4 has no bfloat16), batch 16, at most 256 new tokens. Mistral 7B is a later run on a subset, as the proposal says.
+
+**Pipeline check, dev pool (2026-11-08, seed 42, stub verifier): not a result.** [`reports/m11/dev/VERIFY.md`](reports/m11/dev/VERIFY.md)
+
+- At 4 threads the refit matches M9's `e4_added` exactly in every window, so the gate hook changes nothing. At the laptop's default 10 threads it differs by up to 0.0025, the thread-count effect M4 measured.
+- I checked the outputs with a separate script:
+  - The rows sent to the verifier are exactly the escalated and always-on rows, and SHAP was computed only for them.
+  - Every D3 override has a valid reply that differs from the edge, boosters that disagree, and a drift flag.
+  - E5 and E6 rebuild from the per-row records.
+  - Macro-F1 recomputes to within rounding.
+- 77,842 rows were sampled and 14,127 sent to the verifier. The full stream escalates 8.6%. The payload is about 1,000 bytes, against M10's 175: class medians and recent class shares are what make it larger. The prompt log is 72 MB for the dev pool, so it isn't tracked in git.
+- The stub's numbers are not reported as results. It replaces the edge's label wrongly far more often than rightly, which only shows that the pipeline lets a bad verifier through when the policy is off (`llm_free`).
 
 ### M12: LLM adaptation-policy agent (training-time decisions)
 **Goal:** the "explanation" document's extension: the LLM decides *how* to learn next, never the model internals.
@@ -925,6 +960,7 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 | 2026-11-07 | M8 full pool, first run | Kaggle at `285be6e`. Lr 0.1 from the dev sweep is unstable on the full pool: FedAvg 0.8267 and 0.6063 on window average across two seeds, collapsing on validation rows too. Kept in `reports/m8/full/lr0.1/`, not used as the result. Added a validation-only lr sweep on the full pool ahead of the final passes. |
 | 2026-11-07 | M8 ✅ | Kaggle at `cb9b1dc`, seeds 42 and 43. Lr 0.03 chosen on full-pool validation rows; lr 0.1's collapse reproduced. FedAvg 0.8434 ± 0.0029, FedProx 0.8425 ± 0.0021, no real difference between them; E3 0.9254, local 0.9209. Rehearsal doesn't help FedAvg. The gap mixes model family with federation, so the claim is about this MLP. |
 | 2026-11-07 | M8 check | Recomputed the M8 numbers from raw outputs: they match, apart from one rounding corrected in this README (0.0143 to 0.0142). The `git_dirty` flag on all Kaggle runs is not traced: added `notebooks/m8_dirty_check.ipynb` and a `git_changed` field to every run's `environment.json`. |
+| 2026-11-08 | M11 🟨 (built) | Design fixed in the README before any result. Verifier module (payload, JSON contract, retry with the error, fallback, D3, JSONL log), a read-only hook in M9's gate, `scripts/m11_verify.py` and `notebooks/m11_kaggle.ipynb` (Gemma 2 2B, 4-bit, T4). Dev pipeline check with a stub: refit matches M9 exactly at 4 threads, outputs checked separately. Full pool on Kaggle next. |
 | 2026-11-08 | M10 ✅ | Full pool, seeds 42 and 43, at `bee20e1`, all runs clean, figures recomputed from the stores. Local TreeSHAP costs about 100 times inference on one thread (36.5 and 40.2 ms per row at t5), so explaining every prediction isn't practical. The SHAP drift signal is above its noise floor at t1, t3 and t5 in both seeds and at the floor at t4. The refit differs from M9's scores by up to 0.0016 from t2 on, the known unexplained rerun drift. The first Kaggle attempt failed on a stale clone; the notebook now stops early on one. |
 | 2026-11-08 | M10 🟨 (dev) | TreeSHAP of `e4_added` (D11) built with XGBoost's and LightGBM's own exact TreeSHAP: local top-5 store, global rankings, SHAP drift signal, cost. The refit matches M9 exactly. Local SHAP costs about 140 times inference at t5 on one thread. The drift signal is small but above its noise floor at every boundary, t1 included. Full pool next. |
 | 2026-11-08 | D11 decided | The user chose `e4_added` (the trigger added to the fixed schedule) as the E4 that E5 and E6 build on. It was chosen after seeing the full-pool results, and is reported that way. `e4` stays in the M9 report. |
