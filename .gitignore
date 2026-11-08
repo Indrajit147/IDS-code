@@ -33,3 +33,4 @@ hf_cache/
 
 # Small tracked report tables
 !reports/**/*.csv
+reports/m11/**/llm_log.jsonl
