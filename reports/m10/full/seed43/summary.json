@@ -1,0 +1,186 @@
+{
+  "pool": "full",
+  "seed": 43,
+  "margin_agreement": 0.9998217131141147,
+  "payload_bytes_mean": 175.93764416166164,
+  "rows_explained": 89743,
+  "cost_by_window": {
+    "0": {
+      "rows": 982.87,
+      "shap_us_per_row": 2199.09,
+      "infer_us_per_row": 30.99,
+      "shap_us_per_row_1thread": 5038.55,
+      "infer_us_per_row_1thread": 46.02,
+      "xgb_trees": 300.0,
+      "lgb_trees": 300.0
+    },
+    "1": {
+      "rows": 1000.0,
+      "shap_us_per_row": 6586.57,
+      "infer_us_per_row": 55.63,
+      "shap_us_per_row_1thread": 15062.45,
+      "infer_us_per_row_1thread": 127.22,
+      "xgb_trees": 877.2,
+      "lgb_trees": 726.8
+    },
+    "2": {
+      "rows": 1000.0,
+      "shap_us_per_row": 9568.27,
+      "infer_us_per_row": 76.21,
+      "shap_us_per_row_1thread": 22198.75,
+      "infer_us_per_row_1thread": 199.7,
+      "xgb_trees": 1244.4,
+      "lgb_trees": 988.0
+    },
+    "3": {
+      "rows": 1000.0,
+      "shap_us_per_row": 13397.56,
+      "infer_us_per_row": 103.08,
+      "shap_us_per_row_1thread": 31092.59,
+      "infer_us_per_row_1thread": 283.31,
+      "xgb_trees": 1753.2,
+      "lgb_trees": 1278.4
+    },
+    "4": {
+      "rows": 1000.0,
+      "shap_us_per_row": 15366.77,
+      "infer_us_per_row": 114.86,
+      "shap_us_per_row_1thread": 35714.61,
+      "infer_us_per_row_1thread": 327.97,
+      "xgb_trees": 2052.8,
+      "lgb_trees": 1423.2
+    },
+    "5": {
+      "rows": 1000.0,
+      "shap_us_per_row": 17326.09,
+      "infer_us_per_row": 127.96,
+      "shap_us_per_row_1thread": 40169.84,
+      "infer_us_per_row_1thread": 374.23,
+      "xgb_trees": 2327.6,
+      "lgb_trees": 1556.0
+    }
+  },
+  "drift_by_boundary": {
+    "1": {
+      "rows_new": 1000.0,
+      "rows_ref": 982.8667,
+      "change_new": 0.0108,
+      "top_overlap_new": 0.9067,
+      "change_control": 0.0029,
+      "top_overlap_control": 0.9867
+    },
+    "2": {
+      "rows_new": 1000.0,
+      "rows_ref": 1000.0,
+      "change_new": 0.0024,
+      "top_overlap_new": 0.9467,
+      "change_control": 0.0011,
+      "top_overlap_control": 0.9867
+    },
+    "3": {
+      "rows_new": 1000.0,
+      "rows_ref": 1000.0,
+      "change_new": 0.0108,
+      "top_overlap_new": 0.9733,
+      "change_control": 0.0016,
+      "top_overlap_control": 1.0
+    },
+    "4": {
+      "rows_new": 1000.0,
+      "rows_ref": 1000.0,
+      "change_new": 0.0018,
+      "top_overlap_new": 0.9867,
+      "change_control": 0.0018,
+      "top_overlap_control": 0.9867
+    },
+    "5": {
+      "rows_new": 1000.0,
+      "rows_ref": 1000.0,
+      "change_new": 0.0132,
+      "top_overlap_new": 0.92,
+      "change_control": 0.0018,
+      "top_overlap_control": 0.9733
+    }
+  },
+  "share_above_control": {
+    "1": 0.867,
+    "2": 0.667,
+    "3": 0.933,
+    "4": 0.4,
+    "5": 0.8
+  },
+  "top10_by_window": {
+    "0": [
+      "Number",
+      "AVG",
+      "Tot_size",
+      "Variance",
+      "Srate",
+      "Covariance",
+      "syn_flag_number",
+      "Min",
+      "ICMP",
+      "ack_flag_number"
+    ],
+    "1": [
+      "Number",
+      "Header_Length",
+      "Rate",
+      "Srate",
+      "Variance",
+      "Protocol_Type",
+      "AVG",
+      "ICMP",
+      "syn_count",
+      "Tot_size"
+    ],
+    "2": [
+      "Number",
+      "Header_Length",
+      "Rate",
+      "Srate",
+      "Variance",
+      "AVG",
+      "Protocol_Type",
+      "rst_count",
+      "fin_count",
+      "Tot_size"
+    ],
+    "3": [
+      "Number",
+      "Header_Length",
+      "Rate",
+      "rst_count",
+      "Srate",
+      "AVG",
+      "Magnitue",
+      "Protocol_Type",
+      "fin_count",
+      "Variance"
+    ],
+    "4": [
+      "Number",
+      "Header_Length",
+      "Rate",
+      "rst_count",
+      "Srate",
+      "AVG",
+      "fin_count",
+      "Magnitue",
+      "Variance",
+      "Protocol_Type"
+    ],
+    "5": [
+      "Number",
+      "Header_Length",
+      "Rate",
+      "rst_count",
+      "fin_count",
+      "Srate",
+      "Variance",
+      "Magnitue",
+      "AVG",
+      "Protocol_Type"
+    ]
+  }
+}
