@@ -35,6 +35,7 @@ python scripts/m8_fedavg.py --pool dev --set resources.n_jobs=4        # E2, Fed
 python scripts/m7_seeds.py --pool dev --milestone m8                   # reports/m8/dev/SEEDS.md
 python scripts/m8_lr_sweep.py --pool dev --lrs 0.03 0.1 --seeds 42 43   # choose lr on validation rows; reports/m8/<pool>/LR_SWEEP.csv
 python scripts/m9_e4.py --pool dev --set resources.n_jobs=4 --only NAME --resume   # E4, one pass per process (see the file's docstring); then --report; reports/m9/<pool>/
+python scripts/m10_shap.py --pool dev --set resources.n_jobs=4               # TreeSHAP of e4_added (D11); --only fit|shap; reports/m10/<pool>/
 ```
 
 On Kaggle, open `notebooks/kaggle_bootstrap.ipynb`. It clones this repo, installs it with `--no-deps`, and auto-discovers the attached data under `/kaggle/input`. The environment is detected automatically and can be forced with `IDS_ENV=local|kaggle`. The Kaggle dataset needs only the five files of `data/processed/`: `data_manifest.json`, `wifi_mqtt_full.parquet`, `wifi_mqtt_dev.parquet`, `wifi_profiling.parquet` and `ble.parquet`.
@@ -67,7 +68,7 @@ Rules:
 | M7  | DA-FedDistill (federated distillation)             | E3, novelty claim B           | ✅ Done (dev + full); acceptance met on the full pool's window average only, two seeds | 2026-11-06 |
 | M8  | Neural FL baselines (FedAvg / FedProx MLP)         | E2, baselines                 | ✅ Done: dev 3 seeds, full pool 2 seeds at lr 0.03, chosen on full-pool validation rows | 2026-11-07 |
 | M9  | Drift-triggered updates, feature selection, adaptive threshold | E4, Methodology Step 5 | ✅ Done (dev + full, two seeds); `e4_added` carried forward (D11) | — |
-| M10 | SHAP explainability (local + global store)         | Novelty claim C               | ⬜ Not started | — |
+| M10 | SHAP explainability (local + global store)         | Novelty claim C               | 🟨 Dev done (one seed); full pool pending on Kaggle | — |
 | M11 | Cloud LLM verifier (gated, JSON-constrained)       | E5, E6, novelty claim A       | ⬜ Not started | — |
 | M12 | LLM adaptation-policy agent (training decisions)   | "What changes through LLM reasoning" | ⬜ Not started | — |
 | M13 | Federated GBDT baseline (stretch)                  | E7                            | ⬜ Not started | — |
@@ -257,7 +258,7 @@ IDS-code/
 │   ├── llm/           # (planned) backend, prompts, schema, verifier, policy agent
 │   └── utils/         # seed, jsonl, config, run
 ├── scripts/                      # CLI entry points per milestone
-├── notebooks/                    # kaggle_bootstrap, m3_kaggle (M3 to M5), m6_kaggle, m7_kaggle, m8_kaggle, m8_dirty_check, m9_kaggle; later Notebook A (train/FL) and B (inference/LLM/XAI)
+├── notebooks/                    # kaggle_bootstrap, m3_kaggle (M3 to M5), m6_kaggle, m7_kaggle, m8_kaggle, m8_dirty_check, m9_kaggle, m10_kaggle; later Notebook A (train/FL) and B (inference/LLM/XAI)
 ├── tests/
 ├── reports/m<k>/                 # tracked milestone reports (EDA, figures, manifests)
 └── results/runs/<run_id>/        # untracked: config snapshot, metrics, logs, models
@@ -797,10 +798,39 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 
 ### M10: SHAP explainability
 **Goal:** two-tier explanations that are cheap enough to run.
-- [ ] Local TreeSHAP for the fused ensemble (top-k features per sample)
-- [ ] Global SHAP per window/client from sampled, cached values; a SHAP drift signal (change in mean |SHAP| ranking)
-- [ ] Explanation store (Parquet/JSONL) and figures
+- [x] Local TreeSHAP for the fused ensemble (top-k features per sample) (`src/ids/eval/explain.py`, `scripts/m10_shap.py`)
+- [x] Global SHAP per window/client from sampled, cached values; a SHAP drift signal (change in mean |SHAP| ranking)
+- [x] Explanation store (Parquet/JSONL) and figures
+- [ ] Full-pool run: `notebooks/m10_kaggle.ipynb`, seeds 42 and 43
 - **Acceptance:** SHAP cost per sample is measured, and the global rankings per window are stored.
+
+**Design, fixed on 2026-11-08 before any M10 result (the user asked to start M10; the choices below are mine unless marked as the proposal's).**
+
+*What the proposal fixes:* two tiers. A "local SHAP summary" is made on the edge with each decision, and escalated samples carry "top-k features + SHAP summary + probabilities" to the cloud. A "global SHAP and explanation store" in the cloud holds a "consolidated attribution summary", and "SHAP drift patterns" are part of the cloud's drift monitoring (Step 5) and feed the feature-guidance agent (M12). Its cost mitigation: "sample-based SHAP, per-window SHAP caching, and top-feature only explanation storage". E4 to E7 all list SHAP as their XAI output.
+
+*Model explained:* the E4 carried forward (D11, `e4_added`), each client's edge ensemble after window t's update, on window t's test rows. M9 doesn't keep its models, so `scripts/m10_shap.py` reruns the `e4_added` pass with M9's code and K, saves the models per window, and checks that its scores match M9's report. g_t, the cloud's calibration on top, isn't explained: the proposal places local SHAP on the edge, after fusion.
+
+*What is attributed:* exact TreeSHAP, computed by XGBoost and LightGBM themselves (`pred_contribs`, `pred_contrib`), not the `shap` package. The edge averages the two models' *probabilities*, and SHAP is additive only in each model's margin (logit). So the attribution is w·φ_XGB + (1 − w)·φ_LGBM for the class the edge predicts, with the edge's fusion weight w. It sums exactly to the weighted margin of that class (checked in code on every call). The report states how often the class with the highest weighted margin is the class the edge predicts, so the size of this approximation is known.
+
+*Rows:* a uniform random sample of up to 1,000 CSV test rows per client and window (D7). It is drawn without labels, as the cloud would draw it, and labels are used only to report on it.
+
+*Local store:* for every sampled row, the top 5 features by |attribution| with their signed values, the bias, the predicted and true class, in `local.parquet`. The payload of an escalated sample (top 5 + the six probabilities + disagreement) is measured in bytes with M3's `payload_bytes`.
+
+*Global store:* per client and window, the mean |attribution| of each feature over the sample, and the cloud's summary as the mean over clients, each with its ranking.
+
+*SHAP drift signal:* label-free, at each boundary t−1 → t, before any update. For each client, the model through t−1 is explained on a sample of window t's rows and on a sample of window t−1's rows. The signal is 1 − Spearman ρ between the two mean-|attribution| vectors, with the top-5 overlap also shown. The noise floor is the same comparison between two disjoint samples of window t−1. It is reported per boundary, including t1, where M5 found ADWIN on disagreement silent (D8).
+
+*Cost:* TreeSHAP time per row on 1 thread and on 4, per window, against plain inference on the same rows and threads.
+
+
+**Results, dev pool (2026-11-08, seed 42 only)**: [`reports/m10/dev/SHAP.md`](reports/m10/dev/SHAP.md)
+
+- One seed on a 5% sample. The refit `e4_added` matches M9's report exactly (difference 0.000000 in every window), so the explained models are M9's. I recomputed the report's figures from the stores (margin agreement, payload size, cloud summary as the mean of the clients, top-10 rankings), and they match. 49,989 rows were explained: dev clients have fewer rows, from 39 to 1,000 per client and window.
+- **The approximation is small:** the class with the highest weighted margin is the edge's predicted class for 0.9992 of the rows. The attributions add up exactly to that margin, checked on every call.
+- **Local TreeSHAP on every prediction is expensive at the edge.** At t5 it takes about 22 ms per row on one thread against 0.16 ms for inference, about 140 times as long, and the cost grows with the trees (1 ms at t0). On 4 threads it is 8 ms. These are single timings on this laptop. The proposal's own mitigation ("sample-based SHAP") fits: explaining only the escalated rows (about 7% to 10%, M9) or a sample would be needed in practice. That is not decided here.
+- **Escalation payload:** 178 bytes on average for the top 5 features with values, six probabilities and disagreement, as compact JSON.
+- **SHAP drift signal: small, but above its noise floor at every boundary, including t1.** The ranking change (1 − Spearman ρ, mean over clients) is 0.008, 0.005, 0.038, 0.009 and 0.024 at t1 to t5, against 0.003 for the control at each. The share of clients above their own control is 0.80, 0.80, 1.00, 0.73 and 1.00. At t1, where ADWIN on disagreement is silent (D8), 12 of 15 clients are above it. On dev the comparison is, if anything, conservative: the control compares two samples of the older window, which are smaller than the new window's sample. No threshold is set, so whether it works as a flag isn't tested. Its use is for M12's feature guidance, and the proposal's Step 5.
+- **Global ranking shifts with the attacks:** `Number`, `Variance` and `AVG` lead at t0 (DoS only), and `rst_count` and `Header_Length` lead from t3 on, once MQTT and later classes are in.
 
 ### M11: Cloud LLM verifier (inference-time only)
 **Goal:** E5/E6, gated verification with strict JSON output.
@@ -875,6 +905,7 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 | 2026-11-07 | M8 full pool, first run | Kaggle at `285be6e`. Lr 0.1 from the dev sweep is unstable on the full pool: FedAvg 0.8267 and 0.6063 on window average across two seeds, collapsing on validation rows too. Kept in `reports/m8/full/lr0.1/`, not used as the result. Added a validation-only lr sweep on the full pool ahead of the final passes. |
 | 2026-11-07 | M8 ✅ | Kaggle at `cb9b1dc`, seeds 42 and 43. Lr 0.03 chosen on full-pool validation rows; lr 0.1's collapse reproduced. FedAvg 0.8434 ± 0.0029, FedProx 0.8425 ± 0.0021, no real difference between them; E3 0.9254, local 0.9209. Rehearsal doesn't help FedAvg. The gap mixes model family with federation, so the claim is about this MLP. |
 | 2026-11-07 | M8 check | Recomputed the M8 numbers from raw outputs: they match, apart from one rounding corrected in this README (0.0143 to 0.0142). The `git_dirty` flag on all Kaggle runs is not traced: added `notebooks/m8_dirty_check.ipynb` and a `git_changed` field to every run's `environment.json`. |
+| 2026-11-08 | M10 🟨 (dev) | TreeSHAP of `e4_added` (D11) built with XGBoost's and LightGBM's own exact TreeSHAP: local top-5 store, global rankings, SHAP drift signal, cost. The refit matches M9 exactly. Local SHAP costs about 140 times inference at t5 on one thread. The drift signal is small but above its noise floor at every boundary, t1 included. Full pool next. |
 | 2026-11-08 | D11 decided | The user chose `e4_added` (the trigger added to the fixed schedule) as the E4 that E5 and E6 build on. It was chosen after seeing the full-pool results, and is reported that way. `e4` stays in the M9 report. |
 | 2026-11-08 | M9 ✅ | Full pool, seeds 42 and 43, at `d6ef3ce`, all runs clean and recomputed from confusion counts. E4 scores 0.8360 against E3's 0.9256 with nine times the variance, so H2 isn't supported for E4 as defined. Its window-end loss is on each window's new class at t2, t4 and t5, where few clients trigger. Adding the trigger to the schedule scores 0.9240 and is faster at one boundary of five. The drift score adds nothing over a fixed gate at the same cost, and t1 stays blind. Which E4 to carry forward is the user's call. |
 | 2026-11-07 | M9 🟨 (dev) | E4 built: ADWIN trigger inside windows, top-K limiting new trees, drift score and adaptive gate, one seed on dev. `fixed` reproduces E3 exactly. Replacing the schedule scores 0.8085 against E3's 0.9130, adding the trigger to it 0.9079, and both serve much better during a window. The drift score adds nothing clear. Full pool next. |

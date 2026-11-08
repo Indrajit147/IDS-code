@@ -1,0 +1,186 @@
+{
+  "pool": "dev",
+  "seed": 42,
+  "margin_agreement": 0.9992398327632079,
+  "payload_bytes_mean": 177.99475884694633,
+  "rows_explained": 49989,
+  "cost_by_window": {
+    "0": {
+      "rows": 143.13,
+      "shap_us_per_row": 576.29,
+      "infer_us_per_row": 17.61,
+      "shap_us_per_row_1thread": 1049.06,
+      "infer_us_per_row_1thread": 26.45,
+      "xgb_trees": 295.6,
+      "lgb_trees": 280.0
+    },
+    "1": {
+      "rows": 510.93,
+      "shap_us_per_row": 1494.72,
+      "infer_us_per_row": 17.86,
+      "shap_us_per_row_1thread": 3775.35,
+      "infer_us_per_row_1thread": 40.59,
+      "xgb_trees": 706.8,
+      "lgb_trees": 487.6
+    },
+    "2": {
+      "rows": 542.67,
+      "shap_us_per_row": 3642.13,
+      "infer_us_per_row": 33.05,
+      "shap_us_per_row_1thread": 9669.03,
+      "infer_us_per_row_1thread": 78.36,
+      "xgb_trees": 1019.6,
+      "lgb_trees": 662.0
+    },
+    "3": {
+      "rows": 671.93,
+      "shap_us_per_row": 5816.02,
+      "infer_us_per_row": 59.7,
+      "shap_us_per_row_1thread": 20408.6,
+      "infer_us_per_row_1thread": 143.89,
+      "xgb_trees": 1484.8,
+      "lgb_trees": 880.4
+    },
+    "4": {
+      "rows": 707.93,
+      "shap_us_per_row": 6727.97,
+      "infer_us_per_row": 49.18,
+      "shap_us_per_row_1thread": 19621.12,
+      "infer_us_per_row_1thread": 152.8,
+      "xgb_trees": 1769.2,
+      "lgb_trees": 1034.4
+    },
+    "5": {
+      "rows": 756.0,
+      "shap_us_per_row": 8133.74,
+      "infer_us_per_row": 47.25,
+      "shap_us_per_row_1thread": 21974.5,
+      "infer_us_per_row_1thread": 158.7,
+      "xgb_trees": 1986.4,
+      "lgb_trees": 1127.6
+    }
+  },
+  "drift_by_boundary": {
+    "1": {
+      "rows_new": 510.9333,
+      "rows_ref": 143.1333,
+      "change_new": 0.008,
+      "top_overlap_new": 0.9733,
+      "change_control": 0.0034,
+      "top_overlap_control": 0.9867
+    },
+    "2": {
+      "rows_new": 542.6667,
+      "rows_ref": 510.9333,
+      "change_new": 0.0054,
+      "top_overlap_new": 0.8933,
+      "change_control": 0.0026,
+      "top_overlap_control": 0.96
+    },
+    "3": {
+      "rows_new": 671.9333,
+      "rows_ref": 542.6667,
+      "change_new": 0.038,
+      "top_overlap_new": 0.72,
+      "change_control": 0.0026,
+      "top_overlap_control": 0.9733
+    },
+    "4": {
+      "rows_new": 707.9333,
+      "rows_ref": 671.9333,
+      "change_new": 0.0091,
+      "top_overlap_new": 0.9333,
+      "change_control": 0.0027,
+      "top_overlap_control": 0.96
+    },
+    "5": {
+      "rows_new": 756.0,
+      "rows_ref": 707.9333,
+      "change_new": 0.0243,
+      "top_overlap_new": 0.84,
+      "change_control": 0.0029,
+      "top_overlap_control": 0.9733
+    }
+  },
+  "share_above_control": {
+    "1": 0.8,
+    "2": 0.8,
+    "3": 1.0,
+    "4": 0.733,
+    "5": 1.0
+  },
+  "top10_by_window": {
+    "0": [
+      "Number",
+      "Variance",
+      "AVG",
+      "Tot_size",
+      "Min",
+      "Srate",
+      "ack_flag_number",
+      "Max",
+      "Std",
+      "psh_flag_number"
+    ],
+    "1": [
+      "Variance",
+      "Number",
+      "Rate",
+      "Header_Length",
+      "Srate",
+      "Min",
+      "Protocol_Type",
+      "AVG",
+      "Tot_size",
+      "ICMP"
+    ],
+    "2": [
+      "Variance",
+      "Number",
+      "Rate",
+      "Header_Length",
+      "Srate",
+      "rst_count",
+      "Min",
+      "fin_count",
+      "AVG",
+      "Tot_size"
+    ],
+    "3": [
+      "rst_count",
+      "Rate",
+      "Magnitue",
+      "Number",
+      "Variance",
+      "Header_Length",
+      "Srate",
+      "Min",
+      "fin_count",
+      "Tot_size"
+    ],
+    "4": [
+      "rst_count",
+      "Header_Length",
+      "Rate",
+      "Magnitue",
+      "Number",
+      "Variance",
+      "Srate",
+      "fin_count",
+      "Min",
+      "Tot_size"
+    ],
+    "5": [
+      "rst_count",
+      "Header_Length",
+      "Magnitue",
+      "Number",
+      "Rate",
+      "fin_count",
+      "Variance",
+      "Srate",
+      "Min",
+      "Tot_size"
+    ]
+  }
+}

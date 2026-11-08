@@ -211,7 +211,8 @@ def client_streams(cfg, models, ids, rows_pre, rows_post, carry, key) -> dict:
     return {"streams": out, "carry": new_carry}
 
 
-def run_pass(cfg, name, window_rows, X_pub, y_pub, intro, ev, log, k=None) -> dict:
+def run_pass(cfg, name, window_rows, X_pub, y_pub, intro, ev, log, k=None, save=None) -> dict:
+    """save: a folder for each window's client models (M10 explains them); it doesn't change any result."""
     sc, trigger = cfg["schedule"], {"e4": "error", "e4_added": "error", "e4_schedule": "error", "e4_label_free": "disagreement"}.get(name)
     clients = StreamClients(cfg, window_rows, k=k, trigger=trigger, end_all=name == "e4_added")
     out = {"comm": [], "gate": [], "gate_val": [], "curves": [], "fit": [], "val": [], "k": k}
@@ -279,6 +280,8 @@ def run_pass(cfg, name, window_rows, X_pub, y_pub, intro, ev, log, k=None) -> di
         if name in GATE_PASSES:
             carry_test = gate_on_test(cfg, clients, t, tau, predict, memo, tests, carry_test, out)
         memo.clear()
+        if save is not None:
+            (save / f"t{t}.pkl").write_bytes(pickle.dumps(clients.models))
         v = [macro_f1(clients.val[c]["y"], clients.val[c]["calibrated"]) for c in clients.ids]
         out["val"].append(float(np.mean(v)))
         out["fit"].append({"train_through": t, "local_seconds": round(t1 - tic, 2), "cloud_seconds": round(t2 - t1, 2), "clients_updated": len(clients.updated_now)})

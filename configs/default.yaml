@@ -151,3 +151,8 @@ llm:                               # M11
   backend: none                    # none | hf_local | llama_cpp | api
   model_id: google/gemma-2-2b-it
   quantization: 4bit
+
+explain:                           # M10; the proposal fixes none of these (README, M10)
+  rows_per_client: 1000            # uniform sample of CSV test rows per client and window
+  top_k: 5                         # features kept per row in the local store and the escalation payload
+  timing_rows: 100                 # rows per client and window for the 1-thread cost
