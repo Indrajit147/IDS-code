@@ -37,6 +37,7 @@ python scripts/m8_lr_sweep.py --pool dev --lrs 0.03 0.1 --seeds 42 43   # choose
 python scripts/m9_e4.py --pool dev --set resources.n_jobs=4 --only NAME --resume   # E4, one pass per process (see the file's docstring); then --report; reports/m9/<pool>/
 python scripts/m10_shap.py --pool dev --set resources.n_jobs=4               # TreeSHAP of e4_added (D11); --only fit|shap; reports/m10/<pool>/
 python scripts/m11_verify.py --pool dev --set resources.n_jobs=4             # LLM verifier (stub locally; llm.backend=hf on a GPU); --only fit|llm; reports/m11/<pool>/
+python scripts/m11_subset.py --env kaggle --set llm.backend=hf llm.model_id=<path>  # second verifier on a subset of seed 42's M11 rows; reports/m11/full/mistral/
 ```
 
 On Kaggle, open `notebooks/kaggle_bootstrap.ipynb`. It clones this repo, installs it with `--no-deps`, and auto-discovers the attached data under `/kaggle/input`. The environment is detected automatically and can be forced with `IDS_ENV=local|kaggle`. The Kaggle dataset needs only the five files of `data/processed/`: `data_manifest.json`, `wifi_mqtt_full.parquet`, `wifi_mqtt_dev.parquet`, `wifi_profiling.parquet` and `ble.parquet`.
@@ -259,7 +260,7 @@ IDS-code/
 │   ├── llm/           # (planned) backend, prompts, schema, verifier, policy agent
 │   └── utils/         # seed, jsonl, config, run
 ├── scripts/                      # CLI entry points per milestone
-├── notebooks/                    # kaggle_bootstrap, m3_kaggle (M3 to M5), m6_kaggle, m7_kaggle, m8_kaggle, m8_dirty_check, m9_kaggle, m10_kaggle, m11_kaggle; later Notebook A (train/FL) and B (inference/LLM/XAI)
+├── notebooks/                    # kaggle_bootstrap, m3_kaggle (M3 to M5), m6_kaggle, m7_kaggle, m8_kaggle, m8_dirty_check, m9_kaggle, m10_kaggle, m11_kaggle, m11_mistral_kaggle; later Notebook A (train/FL) and B (inference/LLM/XAI)
 ├── tests/
 ├── reports/m<k>/                 # tracked milestone reports (EDA, figures, manifests)
 └── results/runs/<run_id>/        # untracked: config snapshot, metrics, logs, models
@@ -863,7 +864,7 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 - [x] JSON schema: `final_label`, `override_edge`, `confidence_bucket`, `reasons[]`, `feature_recommendations[]`, `safety_notes`; validate → retry → fall back to "no override + SHAP-only" (`src/ids/llm/verifier.py`)
 - [x] Override policy D3; every prompt, output, parse failure and retry logged to JSONL
 - [x] E5 (gated) and E6 (always-on vs gated): full pool on Kaggle (`notebooks/m11_kaggle.ipynb`, seeds 42 and 43), Gemma 2 2B
-- [ ] Mistral 7B Instruct on a subset (the proposal's second model)
+- [ ] Mistral 7B Instruct on a subset (the proposal's second model): built (`scripts/m11_subset.py`, `notebooks/m11_mistral_kaggle.ipynb`), run pending
 - **Acceptance:** at least 99% of outputs pass schema validation after retries; FP rate change in drift windows (H3); LLM calls per 1k samples and latency reported.
 
 **Design, fixed on 2026-11-08 before any M11 result (the user asked to start M11; the choices below are mine unless marked as the proposal's).**
@@ -915,6 +916,8 @@ SHAP is computed only for rows sent to the LLM.
 - **What Gemma does instead: every ddos becomes dos.** Of the rows the edge called ddos and sent to the verifier (7,058 / 7,264), Gemma relabels all but one as dos, although 0.79 / 0.82 of them are ddos. Otherwise it copies the edge's label, except for 3 spoofing rows per seed that it calls recon. Its reasons are often wrong about the evidence ("the probability for DOS is significantly higher" with ddos at 0.975). The grounding check (0.967 / 0.973) misses this, because it only checks that a reason names a feature or class, not that the claim is true. M14's H4 measure (a) needs the stronger check.
 - **Acceptance.** Valid replies: 0.554 / 0.560 on the first try, 0.9999 after retries (1 fallback per seed), so the 99% bar is met. Most first-try failures set `override_edge` to true while keeping the edge's label. Calls per 1k rows on the full stream (E5): 84.1 / 84.3 at the boundary, 75.3 / 77.6 on the own window; E6 is 1,000. Batch latency for 16 rows on a T4: mean 24.3 / 22.9 s, P95 27.6 / 26.1 s; 0.66 / 0.70 rows per second, so the LLM step took about 8.5 hours per seed for about 14,000 rows. Payload: about 1,020 bytes.
 - **Not concluded:** whether a larger model does better. The proposal's Mistral 7B run on a subset is still open. These are two seeds of one 2B model with one prompt, and the prompt was not tuned on any M11 output.
+
+**Mistral 7B subset, design fixed on 2026-11-09 before any Mistral result.** The proposal says "for a smaller subset" and gives no size, so these choices are mine. The rows are those seed 42's Gemma run sent to the verifier (14,067), in a random order drawn with a fixed seed and without labels; Mistral verifies them in that order until a 9-hour budget on one T4 runs out, and the prefix it reaches is the subset. Reusing that run's evidence means no refit, and both verifiers see exactly the same rows and payloads. Everything else is unchanged: prompt, JSON contract, retries, D3, 4-bit NF4 with float16 compute, batch 16, 256 new tokens, greedy decoding. Reported, paired on the subset rows: each verifier's accuracy against the edge's on escalated (E5) and always-on (E6) rows, overrides that fix or break a label under D3 and without it, false positives on benign rows, valid replies, and latency. Macro-F1 of the full sample can't be computed from a subset, so it isn't reported. A stub check on dev reproduces the dev run's overrides exactly, so the row pairing and the D3 recomputation are right.
 
 ### M12: LLM adaptation-policy agent (training-time decisions)
 **Goal:** the "explanation" document's extension: the LLM decides *how* to learn next, never the model internals.
