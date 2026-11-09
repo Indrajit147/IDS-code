@@ -70,7 +70,7 @@ Rules:
 | M8  | Neural FL baselines (FedAvg / FedProx MLP)         | E2, baselines                 | ✅ Done: dev 3 seeds, full pool 2 seeds at lr 0.03, chosen on full-pool validation rows | 2026-11-07 |
 | M9  | Drift-triggered updates, feature selection, adaptive threshold | E4, Methodology Step 5 | ✅ Done (dev + full, two seeds); `e4_added` carried forward (D11) | — |
 | M10 | SHAP explainability (local + global store)         | Novelty claim C               | ✅ Done (dev one seed, full pool two seeds) | 2026-11-08 |
-| M11 | Cloud LLM verifier (gated, JSON-constrained)       | E5, E6, novelty claim A       | 🟨 Built and checked on dev with a stub; full pool with Gemma 2 2B pending on Kaggle | — |
+| M11 | Cloud LLM verifier (gated, JSON-constrained)       | E5, E6, novelty claim A       | ✅ Full pool, Gemma 2 2B, seeds 42 and 43: the verifier doesn't help; D3 contains the damage. Mistral 7B subset open | — |
 | M12 | LLM adaptation-policy agent (training decisions)   | "What changes through LLM reasoning" | ⬜ Not started | — |
 | M13 | Federated GBDT baseline (stretch)                  | E7                            | ⬜ Not started | — |
 | M14 | Full experiment matrix, ablations & sensitivity    | E1–E7, ablations, H1–H4       | ⬜ Not started | — |
@@ -855,14 +855,15 @@ Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance
 
 ### M11: Cloud LLM verifier (inference-time only)
 **Goal:** E5/E6, gated verification with strict JSON output.
-- [ ] **Backend: (a) Kaggle GPU is primary** (decided 2026-11-04); (b) is the local development fallback. The options are:
+- [x] **Backend: (a) Kaggle GPU is primary** (decided 2026-11-04); (b) is the local development fallback. The options are:
   (a) Kaggle GPU with Gemma-2-2B-it or Mistral-7B-Instruct and 4/8-bit bitsandbytes (as in the proposal),
   (b) local CPU via llama.cpp or Ollama with a quantized small model (slow but free),
   (c) a hosted API (fast, but it costs money and data leaves the machine)
 - [x] Evidence payload: probabilities, disagreement, top-k SHAP, class centroids/priors, drift state (`scripts/m11_verify.py`)
 - [x] JSON schema: `final_label`, `override_edge`, `confidence_bucket`, `reasons[]`, `feature_recommendations[]`, `safety_notes`; validate → retry → fall back to "no override + SHAP-only" (`src/ids/llm/verifier.py`)
 - [x] Override policy D3; every prompt, output, parse failure and retry logged to JSONL
-- [ ] E5 (gated) and E6 (always-on vs gated) cost–accuracy frontier: full pool on Kaggle (`notebooks/m11_kaggle.ipynb`, seeds 42 and 43)
+- [x] E5 (gated) and E6 (always-on vs gated): full pool on Kaggle (`notebooks/m11_kaggle.ipynb`, seeds 42 and 43), Gemma 2 2B
+- [ ] Mistral 7B Instruct on a subset (the proposal's second model)
 - **Acceptance:** at least 99% of outputs pass schema validation after retries; FP rate change in drift windows (H3); LLM calls per 1k samples and latency reported.
 
 **Design, fixed on 2026-11-08 before any M11 result (the user asked to start M11; the choices below are mine unless marked as the proposal's).**
@@ -898,6 +899,22 @@ SHAP is computed only for rows sent to the LLM.
   - Macro-F1 recomputes to within rounding.
 - 77,842 rows were sampled and 14,127 sent to the verifier. The full stream escalates 8.6%. The payload is about 1,000 bytes, against M10's 175: class medians and recent class shares are what make it larger. The prompt log is 72 MB for the dev pool, so it isn't tracked in git.
 - The stub's numbers are not reported as results. It replaces the edge's label wrongly far more often than rightly, which only shows that the pipeline lets a bad verifier through when the policy is off (`llm_free`).
+
+**Results, full pool, Gemma 2 2B instruct (4-bit), seeds 42 and 43 (2026-11-09).** [`reports/m11/full/VERIFY.md`](reports/m11/full/VERIFY.md), [`seed43/VERIFY.md`](reports/m11/full/seed43/VERIFY.md). Both runs are at commit b6bd26e with a clean tree. The refit `e4_added` differs from M9's report by at most 0.00045 and 0.00052 macro-F1 per window (Kaggle sessions, as in M10). I checked the outputs with the separate script used on dev: every check passes, and macro-F1 recomputes to within 5e-7. Values are seed 42 / seed 43.
+
+- **The verifier makes E4 slightly worse, and D3 keeps the loss small.** Mean macro-F1 over windows on the sampled rows:
+
+  | setting | E4 edge | E5 gated, D3 | gated, LLM label whenever valid |
+  |---|---:|---:|---:|
+  | boundary (t−1 model on window t) | 0.6776 / 0.6785 | 0.6763 / 0.6776 | 0.6736 / 0.6709 |
+  | own window | 0.9316 / 0.9309 | 0.9309 / 0.9303 | 0.9287 / 0.9267 |
+
+  On the always-on rows (E6), D3 gives 0.6792 / 0.6753 at the boundary against the edge's 0.6819 / 0.6772. Without D3 the LLM's label drops it to 0.4906 / 0.4805. In no window does E5 beat the edge.
+- **Overrides break more than they fix.** At the boundary, E5 under D3 changes 365 / 294 labels: 105 / 86 fix an edge error and 245 / 191 break a correct one. Without D3 it changes 1,625 / 1,807 (561 / 493 fixed, 1,020 / 1,274 broken). On escalated rows the LLM's label is right on 0.400 / 0.386 of them, the edge's on 0.537 / 0.577.
+- **H3 is not supported with this model: the false-positive rate doesn't move.** It is identical for the edge, E5 and E6 in every window. The LLM never moves a row between benign and an attack class: on the 260 / 278 benign rows it saw, it kept all 17 / 18 of the edge's false positives.
+- **What Gemma does instead: every ddos becomes dos.** Of the rows the edge called ddos and sent to the verifier (7,058 / 7,264), Gemma relabels all but one as dos, although 0.79 / 0.82 of them are ddos. Otherwise it copies the edge's label, except for 3 spoofing rows per seed that it calls recon. Its reasons are often wrong about the evidence ("the probability for DOS is significantly higher" with ddos at 0.975). The grounding check (0.967 / 0.973) misses this, because it only checks that a reason names a feature or class, not that the claim is true. M14's H4 measure (a) needs the stronger check.
+- **Acceptance.** Valid replies: 0.554 / 0.560 on the first try, 0.9999 after retries (1 fallback per seed), so the 99% bar is met. Most first-try failures set `override_edge` to true while keeping the edge's label. Calls per 1k rows on the full stream (E5): 84.1 / 84.3 at the boundary, 75.3 / 77.6 on the own window; E6 is 1,000. Batch latency for 16 rows on a T4: mean 24.3 / 22.9 s, P95 27.6 / 26.1 s; 0.66 / 0.70 rows per second, so the LLM step took about 8.5 hours per seed for about 14,000 rows. Payload: about 1,020 bytes.
+- **Not concluded:** whether a larger model does better. The proposal's Mistral 7B run on a subset is still open. These are two seeds of one 2B model with one prompt, and the prompt was not tuned on any M11 output.
 
 ### M12: LLM adaptation-policy agent (training-time decisions)
 **Goal:** the "explanation" document's extension: the LLM decides *how* to learn next, never the model internals.
@@ -961,6 +978,7 @@ SHAP is computed only for rows sent to the LLM.
 | 2026-11-07 | M8 ✅ | Kaggle at `cb9b1dc`, seeds 42 and 43. Lr 0.03 chosen on full-pool validation rows; lr 0.1's collapse reproduced. FedAvg 0.8434 ± 0.0029, FedProx 0.8425 ± 0.0021, no real difference between them; E3 0.9254, local 0.9209. Rehearsal doesn't help FedAvg. The gap mixes model family with federation, so the claim is about this MLP. |
 | 2026-11-07 | M8 check | Recomputed the M8 numbers from raw outputs: they match, apart from one rounding corrected in this README (0.0143 to 0.0142). The `git_dirty` flag on all Kaggle runs is not traced: added `notebooks/m8_dirty_check.ipynb` and a `git_changed` field to every run's `environment.json`. |
 | 2026-11-08 | M11 🟨 (built) | Design fixed in the README before any result. Verifier module (payload, JSON contract, retry with the error, fallback, D3, JSONL log), a read-only hook in M9's gate, `scripts/m11_verify.py` and `notebooks/m11_kaggle.ipynb` (Gemma 2 2B, 4-bit, T4). Dev pipeline check with a stub: refit matches M9 exactly at 4 threads, outputs checked separately. Full pool on Kaggle next. |
+| 2026-11-09 | M11 ✅ | Full pool, Gemma 2 2B, seeds 42 and 43, checked separately. The verifier lowers macro-F1 slightly in every setting (boundary E5 0.6763 / 0.6776 against the edge's 0.6776 / 0.6785) and never changes the false-positive rate, so H3 isn't supported with this model. D3 holds the loss to at most 0.003; without it, always-on rows lose 0.19 to 0.23. Gemma relabels nearly every ddos as dos. ≥99% valid after retries. Mistral 7B subset open. |
 | 2026-11-08 | M10 ✅ | Full pool, seeds 42 and 43, at `bee20e1`, all runs clean, figures recomputed from the stores. Local TreeSHAP costs about 100 times inference on one thread (36.5 and 40.2 ms per row at t5), so explaining every prediction isn't practical. The SHAP drift signal is above its noise floor at t1, t3 and t5 in both seeds and at the floor at t4. The refit differs from M9's scores by up to 0.0016 from t2 on, the known unexplained rerun drift. The first Kaggle attempt failed on a stale clone; the notebook now stops early on one. |
 | 2026-11-08 | M10 🟨 (dev) | TreeSHAP of `e4_added` (D11) built with XGBoost's and LightGBM's own exact TreeSHAP: local top-5 store, global rankings, SHAP drift signal, cost. The refit matches M9 exactly. Local SHAP costs about 140 times inference at t5 on one thread. The drift signal is small but above its noise floor at every boundary, t1 included. Full pool next. |
 | 2026-11-08 | D11 decided | The user chose `e4_added` (the trigger added to the fixed schedule) as the E4 that E5 and E6 build on. It was chosen after seeing the full-pool results, and is reported that way. `e4` stays in the M9 report. |
