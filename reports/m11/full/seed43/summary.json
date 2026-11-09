@@ -1,0 +1,202 @@
+{
+  "pool": "full",
+  "seed": 43,
+  "backend": "hf",
+  "model": "/kaggle/input/models/google/gemma-2/transformers/gemma-2-2b-it/2",
+  "strength": 8.0,
+  "rows_sampled": 82500,
+  "rows_verified": 14291,
+  "valid_first_try": 0.5597229025260654,
+  "valid_after_retries": 0.9999300258904206,
+  "fallbacks": 1,
+  "grounded": 0.9733379986004199,
+  "payload_bytes_mean": 1021.7401861311315,
+  "llm_calls_per_1k_full_stream_e5": {
+    "boundary": 84.3,
+    "own window": 77.6
+  },
+  "llm_calls_per_1k_e6": 1000.0,
+  "batch_seconds": {
+    "n": 1289,
+    "mean_ms": 22948.74020679053,
+    "p50_ms": 22993.707749999885,
+    "p95_ms": 26108.378310399712
+  },
+  "rows_per_second": 0.6959214161155423,
+  "llm_accuracy_on_escalated": 0.3855919692943608,
+  "edge_accuracy_on_escalated": 0.5767640980218482,
+  "llm_says_override_on_escalated": 0.5209625036905816,
+  "d3_allows_on_escalated": 0.07336876291703573,
+  "mean_by_setting": [
+    {
+      "rows_set": "always_on",
+      "setting": "boundary",
+      "method": "e5",
+      "macro_f1": 0.6769,
+      "fp_rate": 0.0118,
+      "miss_rate": 0.003
+    },
+    {
+      "rows_set": "always_on",
+      "setting": "boundary",
+      "method": "e6",
+      "macro_f1": 0.6753,
+      "fp_rate": 0.0118,
+      "miss_rate": 0.003
+    },
+    {
+      "rows_set": "always_on",
+      "setting": "boundary",
+      "method": "e6_free",
+      "macro_f1": 0.4805,
+      "fp_rate": 0.0118,
+      "miss_rate": 0.003
+    },
+    {
+      "rows_set": "always_on",
+      "setting": "boundary",
+      "method": "pred",
+      "macro_f1": 0.6772,
+      "fp_rate": 0.0118,
+      "miss_rate": 0.003
+    },
+    {
+      "rows_set": "always_on",
+      "setting": "own window",
+      "method": "e5",
+      "macro_f1": 0.9178,
+      "fp_rate": 0.0339,
+      "miss_rate": 0.0007
+    },
+    {
+      "rows_set": "always_on",
+      "setting": "own window",
+      "method": "e6",
+      "macro_f1": 0.9178,
+      "fp_rate": 0.0339,
+      "miss_rate": 0.0007
+    },
+    {
+      "rows_set": "always_on",
+      "setting": "own window",
+      "method": "e6_free",
+      "macro_f1": 0.6863,
+      "fp_rate": 0.0339,
+      "miss_rate": 0.0007
+    },
+    {
+      "rows_set": "always_on",
+      "setting": "own window",
+      "method": "pred",
+      "macro_f1": 0.9186,
+      "fp_rate": 0.0339,
+      "miss_rate": 0.0007
+    },
+    {
+      "rows_set": "sample",
+      "setting": "boundary",
+      "method": "e5",
+      "macro_f1": 0.6776,
+      "fp_rate": 0.0154,
+      "miss_rate": 0.0039
+    },
+    {
+      "rows_set": "sample",
+      "setting": "boundary",
+      "method": "e5_free",
+      "macro_f1": 0.6709,
+      "fp_rate": 0.0154,
+      "miss_rate": 0.0039
+    },
+    {
+      "rows_set": "sample",
+      "setting": "boundary",
+      "method": "pred",
+      "macro_f1": 0.6785,
+      "fp_rate": 0.0154,
+      "miss_rate": 0.0039
+    },
+    {
+      "rows_set": "sample",
+      "setting": "own window",
+      "method": "e5",
+      "macro_f1": 0.9303,
+      "fp_rate": 0.0266,
+      "miss_rate": 0.0006
+    },
+    {
+      "rows_set": "sample",
+      "setting": "own window",
+      "method": "e5_free",
+      "macro_f1": 0.9267,
+      "fp_rate": 0.0266,
+      "miss_rate": 0.0006
+    },
+    {
+      "rows_set": "sample",
+      "setting": "own window",
+      "method": "pred",
+      "macro_f1": 0.9309,
+      "fp_rate": 0.0266,
+      "miss_rate": 0.0006
+    }
+  ],
+  "overrides_by_setting": [
+    {
+      "setting": "boundary",
+      "method": "e5",
+      "overrides": 294,
+      "fixed": 86,
+      "broke": 191
+    },
+    {
+      "setting": "boundary",
+      "method": "e5_free",
+      "overrides": 1807,
+      "fixed": 493,
+      "broke": 1274
+    },
+    {
+      "setting": "boundary",
+      "method": "e6",
+      "overrides": 45,
+      "fixed": 11,
+      "broke": 31
+    },
+    {
+      "setting": "boundary",
+      "method": "e6_free",
+      "overrides": 1849,
+      "fixed": 140,
+      "broke": 1700
+    },
+    {
+      "setting": "own window",
+      "method": "e5",
+      "overrides": 203,
+      "fixed": 64,
+      "broke": 138
+    },
+    {
+      "setting": "own window",
+      "method": "e5_free",
+      "overrides": 1722,
+      "fixed": 603,
+      "broke": 1117
+    },
+    {
+      "setting": "own window",
+      "method": "e6",
+      "overrides": 33,
+      "fixed": 11,
+      "broke": 22
+    },
+    {
+      "setting": "own window",
+      "method": "e6_free",
+      "overrides": 2299,
+      "fixed": 187,
+      "broke": 2112
+    }
+  ]
+}
