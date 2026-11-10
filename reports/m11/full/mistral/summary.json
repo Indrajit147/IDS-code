@@ -1,0 +1,143 @@
+{
+  "pool": "full",
+  "seed": 42,
+  "name": "mistral",
+  "model": "mistralai/Mistral-7B-Instruct-v0.2",
+  "first": "gemma-2-2b-it",
+  "rows_sent": 14067,
+  "stopped_by": "the 9-hour budget",
+  "batch_seconds": {
+    "n": 692,
+    "mean_ms": 48067.94934064596,
+    "p50_ms": 49432.53342800062,
+    "p95_ms": 55301.563372100645
+  },
+  "rows_per_second": 0.3193636566555861,
+  "rows_done": 4960,
+  "valid_first_try": 0.3143145161290323,
+  "valid_after_retries": 0.8112903225806452,
+  "fallbacks": 936,
+  "grounded": 0.9527833001988072,
+  "escalated": {
+    "rows": 2245,
+    "edge_accuracy": 0.5541202672605791,
+    "gemma": {
+      "accuracy": 0.4111358574610245,
+      "disagrees_with_edge": 0.5033407572383074,
+      "d3": {
+        "overrides": 221,
+        "fixed": 67,
+        "broke": 147
+      },
+      "free": {
+        "overrides": 1130,
+        "fixed": 396,
+        "broke": 717
+      }
+    },
+    "new": {
+      "accuracy": 0.5545657015590201,
+      "disagrees_with_edge": 0.0026726057906458797,
+      "d3": {
+        "overrides": 2,
+        "fixed": 1,
+        "broke": 0
+      },
+      "free": {
+        "overrides": 6,
+        "fixed": 3,
+        "broke": 2
+      }
+    }
+  },
+  "always_on": {
+    "rows": 2951,
+    "edge_accuracy": 0.8393764825482887,
+    "gemma": {
+      "accuracy": 0.43341240257539815,
+      "disagrees_with_edge": 0.5018637749915283,
+      "d3": {
+        "overrides": 35,
+        "fixed": 6,
+        "broke": 27
+      },
+      "free": {
+        "overrides": 1481,
+        "fixed": 139,
+        "broke": 1337
+      }
+    },
+    "new": {
+      "accuracy": 0.8397153507285666,
+      "disagrees_with_edge": 0.00033886818027787193,
+      "d3": {
+        "overrides": 0,
+        "fixed": 0,
+        "broke": 0
+      },
+      "free": {
+        "overrides": 1,
+        "fixed": 1,
+        "broke": 0
+      }
+    }
+  },
+  "benign": {
+    "rows": 87,
+    "edge_fp": 4,
+    "gemma_free_fp": 4,
+    "new_free_fp": 4,
+    "gemma_d3_fp": 4,
+    "new_d3_fp": 4
+  },
+  "crosstab_edge_x_new": {
+    "benign": {
+      "benign": 103,
+      "ddos": 0,
+      "dos": 0,
+      "mqtt": 0,
+      "recon": 0,
+      "spoofing": 0
+    },
+    "ddos": {
+      "benign": 0,
+      "ddos": 2489,
+      "dos": 6,
+      "mqtt": 0,
+      "recon": 0,
+      "spoofing": 0
+    },
+    "dos": {
+      "benign": 0,
+      "ddos": 0,
+      "dos": 2083,
+      "mqtt": 0,
+      "recon": 0,
+      "spoofing": 0
+    },
+    "mqtt": {
+      "benign": 0,
+      "ddos": 0,
+      "dos": 0,
+      "mqtt": 126,
+      "recon": 0,
+      "spoofing": 0
+    },
+    "recon": {
+      "benign": 0,
+      "ddos": 0,
+      "dos": 0,
+      "mqtt": 0,
+      "recon": 135,
+      "spoofing": 0
+    },
+    "spoofing": {
+      "benign": 0,
+      "ddos": 0,
+      "dos": 0,
+      "mqtt": 0,
+      "recon": 0,
+      "spoofing": 18
+    }
+  }
+}
