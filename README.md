@@ -74,7 +74,7 @@ Rules:
 | M10 | SHAP explainability (local + global store)         | Novelty claim C               | ✅ Done (dev one seed, full pool two seeds) | 2026-11-08 |
 | M11 | Cloud LLM verifier (gated, JSON-constrained)       | E5, E6, novelty claim A       | ✅ Full pool: neither verifier helps. Gemma 2 2B (seeds 42, 43) relabels ddos as dos, D3 contains the damage; Mistral 7B (subset) agrees with the edge and fails the JSON contract on 19% | — |
 | M12 | LLM adaptation-policy agent (training decisions)   | "What changes through LLM reasoning" | 🟨 Full pool seed 42 done (Gemma 2 2B delays every update and loses 0.10 window-average macro-F1; the heuristic ties E4); seed 43 pending | — |
-| M13 | Federated GBDT baseline (stretch)                  | E7                            | ⬜ Not started | — |
+| M13 | Federated GBDT baseline (stretch)                  | E7                            | 🟨 Built; dev and full pool pending on Kaggle (CPU only) | — |
 | M14 | Full experiment matrix, ablations & sensitivity    | E1–E7, ablations, H1–H4       | ⬜ Not started | — |
 | M15 | Reproducibility package & paper artifacts          | Notebook A/B, IoT-J outline   | ⬜ Not started | — |
 
@@ -261,7 +261,7 @@ IDS-code/
 │   ├── llm/           # (planned) backend, prompts, schema, verifier, policy agent
 │   └── utils/         # seed, jsonl, config, run
 ├── scripts/                      # CLI entry points per milestone
-├── notebooks/                    # kaggle_bootstrap, m3_kaggle (M3 to M5), m6_kaggle, m7_kaggle, m8_kaggle, m8_dirty_check, m9_kaggle, m10_kaggle, m11_kaggle, m11_mistral_kaggle, m12_kaggle; later Notebook A (train/FL) and B (inference/LLM/XAI)
+├── notebooks/                    # kaggle_bootstrap, m3_kaggle (M3 to M5), m6_kaggle, m7_kaggle, m8_kaggle, m8_dirty_check, m9_kaggle, m10_kaggle, m11_kaggle, m11_mistral_kaggle, m12_kaggle, m13_kaggle; later Notebook A (train/FL) and B (inference/LLM/XAI)
 ├── tests/
 ├── reports/m<k>/                 # tracked milestone reports (EDA, figures, manifests)
 └── results/runs/<run_id>/        # untracked: config snapshot, metrics, logs, models
@@ -1015,8 +1015,21 @@ The multipliers and the four feature groups are my assumptions: the document giv
 
 ### M13: Federated GBDT baseline (stretch)
 **Goal:** E7, a "true" federated boosting reference.
-- [ ] Simplified horizontal federated GBDT (histogram aggregation, relaxed privacy) on reduced data
+- [x] Horizontal federated GBDT by histogram aggregation, relaxed privacy (`src/ids/fl/fedgbdt.py`, `scripts/m13_fedgbdt.py`)
+- [ ] Results on the full pool (Kaggle, CPU only), seed 42
 - **Acceptance:** the gap to E1 and E3 is reported, or the baseline is documented as infeasible with reasons.
+
+**Design, fixed on 2026-11-10 before any M13 result (my choices unless marked as the proposal's).**
+
+*What the proposal fixes:* E7 is a "federated GBDT baseline (if feasible)" with incremental drift adaptation, no feature selection, no LLM and SHAP as XAI, answering "how close can 'true' federated boosting get?". It is a stretch baseline because "secure cryptographic federated boosting is heavy for Kaggle", and it names two literature families: "Practical Federated Gradient Boosting Decision Trees" (horizontal, relaxed privacy, near-centralized accuracy) [16] and FedXGBoost variants [17].
+
+*Protocol:* horizontal federated XGBoost by histogram aggregation, run as XGBoost's own collective (Rabit), with one worker process per client holding only that client's rows. The clients' quantile sketches are merged into shared bin cuts once per fit. At every tree node, each client's gradient and Hessian histograms are summed across clients, so every client grows the same trees, and the validation metric for early stopping is summed the same way. Nothing else leaves a client. These summaries travel unencrypted: that is the relaxed privacy. **Deviation:** this is not the LSH-based method of [16]. Histogram aggregation is the protocol that XGBoost's federated mode and the FedXGBoost line use without their encryption, and it loses nothing to federation beyond the bin cuts: the summed histograms are exactly the ones pooled training would compute on the same bins. That makes it the "true federated boosting" upper reference the E7 question asks for. The README's earlier plan said "on reduced data"; the full pool is used if it fits, because the cost is about one XGBoost fit spread across 15 processes.
+
+*Model and schedule:* one global XGBoost (no LightGBM: it has no horizontal federated mode in its Python package) with M6's settings: `models.xgb`, `max_delta_step` 10, the fixed 6-class output, at most `first_trees` (50) rounds at t0 and `new_trees` (50) more per window, early stopping 20. "Incremental" (the proposal's E7 row): each window adds trees trained on that window's rows of every client, without a rehearsal buffer or feature selection. Class weights are balanced on the global class counts (a summary each client sends), capped at 50 as in M3. Each client holds out 10% of its window's rows for validation, as in M6. There is no temperature calibration, because the headline macro-F1 doesn't depend on it.
+
+*Measured:* M6's metrics on the `csv_only` rows (the window average with and without t0, final, class forgetting, per window), against E1 (M3), M6's naive incremental (local, no rehearsal), E3 (M7) and E4 (M9, `e4_added`), all seed 42. Also: wall time per window, model size, and uplink bytes per client per window. The uplink is counted as an upper bound: one histogram (features × 256 bins × gradient and Hessian, 8 bytes each) per tree node, without XGBoost's subtraction trick, which halves it. The sketch exchange isn't counted. This is set against E3's soft-label uplink from M7.
+
+*Where it runs:* Kaggle, CPU only (`notebooks/m13_kaggle.ipynb`, dev pool then full pool). Fifteen XGBoost worker processes don't fit in the 7.7 GB local machine (it paged and stalled with 8 of 15 started). Locally I checked the protocol with 3 workers (`tests/test_m13.py`: every client ends with a byte-identical model, continued training adds the trees, and 95% or more of predictions agree with pooled training) and ran the whole script on dev with 3 of the 15 clients as a smoke test. Its scores aren't a result.
 
 ### M14: Full experiment matrix, ablations & sensitivity
 **Goal:** every number the paper needs.
@@ -1070,6 +1083,7 @@ The multipliers and the four feature groups are my assumptions: the document giv
 | 2026-11-10 | M11 Mistral subset | Mistral 7B Instruct v0.2 on 4,960 of seed 42's verifier rows, paired with Gemma. It agrees with the edge on 99.85% of valid replies (2 D3 changes), is 81% valid after retries (below the 99% bar; `\_` escapes are the main cause), and runs at 0.32 rows per second. H3 not supported with either model. |
 | 2026-11-10 | M12 🟨 (built) | Design fixed in the README before any result: one policy per client and window at its first update point; six fields mapped to update timing, learning rate and tree budget, buffer weight, feature weights, buffer selection, and refit scope. Arms none, heuristic and llm. Dev check: none matches M9 exactly, and the llm path reproduces the heuristic exactly. `notebooks/m12_kaggle.ipynb` for the full pool with Gemma 2 2B. |
 | 2026-11-10 | M12 🟨 (seed 42) | Full pool, seed 42: none 0.9241 window average (within 0.0011 of M9's E4), heuristic 0.9241, llm (Gemma 2 2B) 0.8218. Gemma chose urgency low at all 75 decisions, so at t2 and t4 only 3 and 2 of 15 clients updated. A first run had failed because the processed dataset wasn't attached; the notebook now checks for it. Seed 43 pending. |
+| 2026-11-10 | M13 🟨 (built) | Design fixed in the README before any result: E7 as horizontal federated XGBoost by histogram aggregation (XGBoost's collective, one worker process per client, relaxed privacy), incremental per window, M6's budgets, global balanced weights. Deviation: histogram aggregation instead of the LSH method of [16]. Protocol test and a 3-client smoke run pass locally; `notebooks/m13_kaggle.ipynb` runs dev and full on a Kaggle CPU session. M12 seed 43 waits for the GPU quota. |
 | 2026-11-08 | M10 ✅ | Full pool, seeds 42 and 43, at `bee20e1`, all runs clean, figures recomputed from the stores. Local TreeSHAP costs about 100 times inference on one thread (36.5 and 40.2 ms per row at t5), so explaining every prediction isn't practical. The SHAP drift signal is above its noise floor at t1, t3 and t5 in both seeds and at the floor at t4. The refit differs from M9's scores by up to 0.0016 from t2 on, the known unexplained rerun drift. The first Kaggle attempt failed on a stale clone; the notebook now stops early on one. |
 | 2026-11-08 | M10 🟨 (dev) | TreeSHAP of `e4_added` (D11) built with XGBoost's and LightGBM's own exact TreeSHAP: local top-5 store, global rankings, SHAP drift signal, cost. The refit matches M9 exactly. Local SHAP costs about 140 times inference at t5 on one thread. The drift signal is small but above its noise floor at every boundary, t1 included. Full pool next. |
 | 2026-11-08 | D11 decided | The user chose `e4_added` (the trigger added to the fixed schedule) as the E4 that E5 and E6 build on. It was chosen after seeing the full-pool results, and is reported that way. `e4` stays in the M9 report. |
