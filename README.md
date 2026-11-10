@@ -73,7 +73,7 @@ Rules:
 | M9  | Drift-triggered updates, feature selection, adaptive threshold | E4, Methodology Step 5 | ✅ Done (dev + full, two seeds); `e4_added` carried forward (D11) | — |
 | M10 | SHAP explainability (local + global store)         | Novelty claim C               | ✅ Done (dev one seed, full pool two seeds) | 2026-11-08 |
 | M11 | Cloud LLM verifier (gated, JSON-constrained)       | E5, E6, novelty claim A       | ✅ Full pool: neither verifier helps. Gemma 2 2B (seeds 42, 43) relabels ddos as dos, D3 contains the damage; Mistral 7B (subset) agrees with the edge and fails the JSON contract on 19% | — |
-| M12 | LLM adaptation-policy agent (training decisions)   | "What changes through LLM reasoning" | 🟨 Built and checked on dev; full pool with Gemma 2 2B pending on Kaggle | — |
+| M12 | LLM adaptation-policy agent (training decisions)   | "What changes through LLM reasoning" | 🟨 Full pool seed 42 done (Gemma 2 2B delays every update and loses 0.10 window-average macro-F1; the heuristic ties E4); seed 43 pending | — |
 | M13 | Federated GBDT baseline (stretch)                  | E7                            | ⬜ Not started | — |
 | M14 | Full experiment matrix, ablations & sensitivity    | E1–E7, ablations, H1–H4       | ⬜ Not started | — |
 | M15 | Reproducibility package & paper artifacts          | Notebook A/B, IoT-J outline   | ⬜ Not started | — |
@@ -933,7 +933,7 @@ SHAP is computed only for rows sent to the LLM.
 - [x] Policy JSON: `update_urgency`, `training_style`, `preserve_old_behavior`, `feature_focus_groups`, `buffer_selection`, `update_scope`, plus `reasons` (`src/ids/llm/policy.py`)
 - [x] Each field mapped to a training knob, applied deterministically (`scripts/m12_policy.py`)
 - [x] Inputs: drift registry, SHAP drift, per-class metrics; each decision is logged with its evidence (`decisions_<arm>.jsonl`), and every prompt and reply too
-- [ ] Ablation: LLM policy vs a fixed heuristic policy vs no policy, full pool on Kaggle (seeds 42 and 43)
+- [ ] Ablation: LLM policy vs a fixed heuristic policy vs no policy, full pool on Kaggle (seeds 42 and 43). Seed 42 done; seed 43 pending
 - **Note:** the main proposal says the LLM is "not used for continuous learning", while the explanation document gives it control over training decisions. The paper must state clearly that the LLM controls the training *policy* only.
 - **Acceptance:** the policy is applied deterministically, and the ablation results are recorded.
 
@@ -991,6 +991,28 @@ The multipliers and the four feature groups are my assumptions: the document giv
 - New classes arrive as the timeline sets them: one category per window at t1 to t4, for all 15 clients, and none at t5. So the heuristic picks high urgency and aggressive training at 80% of its decisions. 49% of decisions come at an ADWIN trigger.
 - On dev the heuristic is below E4: window average 0.8996 against 0.9079, final 0.8561 against 0.8731. This is one seed on the dev sample, so it is not a result. The full pool decides.
 
+**Results, full pool, seed 42 (2026-11-10, Kaggle, commit 1edab5a, clean; CPU at 4 threads, Gemma 2 2B instruct 4-bit on a T4).** [`reports/m12/full/POLICY.md`](reports/m12/full/POLICY.md)
+
+| arm | window avg | avg excl. t0 | final | next-window avg | class forgetting |
+|---|---:|---:|---:|---:|---:|
+| none (E4) | 0.9241 | 0.9090 | 0.8915 | 0.6635 | 0.0286 |
+| heuristic | 0.9241 | 0.9090 | 0.8910 | 0.6667 | 0.0264 |
+| llm (Gemma 2 2B) | 0.8218 | 0.7863 | 0.7498 | 0.5970 | 0.0206 |
+
+| arm | t0 | t1 | t2 | t3 | t4 | t5 | clients updated at t1–t5 |
+|---|---:|---:|---:|---:|---:|---:|---|
+| none | 0.9994 | 0.9018 | 0.9205 | 0.9298 | 0.9015 | 0.8915 | 15, 15, 15, 15, 15 |
+| heuristic | 0.9994 | 0.9043 | 0.9193 | 0.9275 | 0.9032 | 0.8910 | 15, 15, 15, 15, 5 |
+| llm | 0.9994 | 0.8854 | 0.6206 | 0.9248 | 0.7510 | 0.7498 | 15, 3, 15, 2, 5 |
+
+- **Check:** the none arm is within 0.0011 macro-F1 of M9's `e4_added` in every window. That is larger than the 0.0005 seen in earlier Kaggle reruns of E4, but it is the same order, and the code matched M9 exactly on dev.
+- **Gemma 2 2B gives one policy for every case.** All 75 decisions are urgency low and conservative training, with the buffer preserved, uniform buffer selection and a partial update. 70 of 75 focus on rate_timing and packet_size. Replies were valid after retries at all 75 (0.80 on the first try), at 10.5 s per decision.
+- **"Low" urgency is where the damage comes from.** 73 of 75 decisions see a new class, yet Gemma delays every update. The update still runs at the window's end when ADWIN fired, which is why t1 and t3 update all 15 clients. At t2 only 3 of 15 clients update and at t4 only 2, so most clients have not learned that window's new class; macro-F1 there falls to 0.62 and 0.75. The final window ends 0.14 below E4.
+- **Gemma's reasons do not match the evidence.** The most common reasons are "No significant feature shift or SHAP drift" (15) and "New rows have low error rate and good F1 score on validation" (11), while a new class is present in 73 decisions. One reason says new classes "are limited" when one is new.
+- **The heuristic ties E4.** The window averages agree to 4 decimals, and per window the differences are at most 0.0025, which is inside the rerun noise above. The heuristic picks high urgency and aggressive training at 80% of decisions and never a full refit. Its lower class forgetting (0.0264 against 0.0286) is one seed.
+- **Class forgetting is lowest for the llm arm (0.0206)** only because the llm arm learned less to begin with. It is not a gain.
+- **Reading, pending seed 43:** with this 2B model, giving the LLM control of training decisions costs 0.10 window-average macro-F1, and a fixed rule set on the same evidence does no better than no policy. This matches M11, where Gemma also collapsed to a near-constant answer. Whether a larger model does better is not tested here.
+
 ### M13: Federated GBDT baseline (stretch)
 **Goal:** E7, a "true" federated boosting reference.
 - [ ] Simplified horizontal federated GBDT (histogram aggregation, relaxed privacy) on reduced data
@@ -1047,6 +1069,7 @@ The multipliers and the four feature groups are my assumptions: the document giv
 | 2026-11-09 | M11 ✅ | Full pool, Gemma 2 2B, seeds 42 and 43, checked separately. The verifier lowers macro-F1 slightly in every setting (boundary E5 0.6763 / 0.6776 against the edge's 0.6776 / 0.6785) and never changes the false-positive rate, so H3 isn't supported with this model. D3 holds the loss to at most 0.003; without it, always-on rows lose 0.19 to 0.23. Gemma relabels nearly every ddos as dos. ≥99% valid after retries. Mistral 7B subset open. |
 | 2026-11-10 | M11 Mistral subset | Mistral 7B Instruct v0.2 on 4,960 of seed 42's verifier rows, paired with Gemma. It agrees with the edge on 99.85% of valid replies (2 D3 changes), is 81% valid after retries (below the 99% bar; `\_` escapes are the main cause), and runs at 0.32 rows per second. H3 not supported with either model. |
 | 2026-11-10 | M12 🟨 (built) | Design fixed in the README before any result: one policy per client and window at its first update point; six fields mapped to update timing, learning rate and tree budget, buffer weight, feature weights, buffer selection, and refit scope. Arms none, heuristic and llm. Dev check: none matches M9 exactly, and the llm path reproduces the heuristic exactly. `notebooks/m12_kaggle.ipynb` for the full pool with Gemma 2 2B. |
+| 2026-11-10 | M12 🟨 (seed 42) | Full pool, seed 42: none 0.9241 window average (within 0.0011 of M9's E4), heuristic 0.9241, llm (Gemma 2 2B) 0.8218. Gemma chose urgency low at all 75 decisions, so at t2 and t4 only 3 and 2 of 15 clients updated. A first run had failed because the processed dataset wasn't attached; the notebook now checks for it. Seed 43 pending. |
 | 2026-11-08 | M10 ✅ | Full pool, seeds 42 and 43, at `bee20e1`, all runs clean, figures recomputed from the stores. Local TreeSHAP costs about 100 times inference on one thread (36.5 and 40.2 ms per row at t5), so explaining every prediction isn't practical. The SHAP drift signal is above its noise floor at t1, t3 and t5 in both seeds and at the floor at t4. The refit differs from M9's scores by up to 0.0016 from t2 on, the known unexplained rerun drift. The first Kaggle attempt failed on a stale clone; the notebook now stops early on one. |
 | 2026-11-08 | M10 🟨 (dev) | TreeSHAP of `e4_added` (D11) built with XGBoost's and LightGBM's own exact TreeSHAP: local top-5 store, global rankings, SHAP drift signal, cost. The refit matches M9 exactly. Local SHAP costs about 140 times inference at t5 on one thread. The drift signal is small but above its noise floor at every boundary, t1 included. Full pool next. |
 | 2026-11-08 | D11 decided | The user chose `e4_added` (the trigger added to the fixed schedule) as the E4 that E5 and E6 build on. It was chosen after seeing the full-pool results, and is reported that way. `e4` stays in the M9 report. |

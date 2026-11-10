@@ -1,0 +1,831 @@
+{
+  "macro_f1_by_window": {
+    "0": 0.999413253344476,
+    "1": 0.9017777006204756,
+    "2": 0.9205366321871882,
+    "3": 0.9297834397513777,
+    "4": 0.9014965539497314,
+    "5": 0.8914504155164269
+  },
+  "window_avg_macro_f1": 0.9240763325616127,
+  "window_avg_macro_f1_excl_t0": 0.9090089484050399,
+  "final_macro_f1": 0.8914504155164269,
+  "mean_forgetting_by_class": 0.028648238025963724,
+  "next_window_macro_f1": {
+    "0": 0.461780623471475,
+    "1": 0.6276518499730673,
+    "2": 0.6254205277051407,
+    "3": 0.7555509411587513,
+    "4": 0.8469264533579842
+  },
+  "next_window_avg": 0.6634660791332838,
+  "against_m9_e4_added": 0.0010936485929256001,
+  "updates": [
+    {
+      "train_through": 0,
+      "client": 0,
+      "round": null,
+      "rows": 23526
+    },
+    {
+      "train_through": 0,
+      "client": 1,
+      "round": null,
+      "rows": 26516
+    },
+    {
+      "train_through": 0,
+      "client": 2,
+      "round": null,
+      "rows": 12076
+    },
+    {
+      "train_through": 0,
+      "client": 3,
+      "round": null,
+      "rows": 10485
+    },
+    {
+      "train_through": 0,
+      "client": 4,
+      "round": null,
+      "rows": 32770
+    },
+    {
+      "train_through": 0,
+      "client": 5,
+      "round": null,
+      "rows": 8901
+    },
+    {
+      "train_through": 0,
+      "client": 6,
+      "round": null,
+      "rows": 19462
+    },
+    {
+      "train_through": 0,
+      "client": 7,
+      "round": null,
+      "rows": 17399
+    },
+    {
+      "train_through": 0,
+      "client": 8,
+      "round": null,
+      "rows": 41710
+    },
+    {
+      "train_through": 0,
+      "client": 9,
+      "round": null,
+      "rows": 31448
+    },
+    {
+      "train_through": 0,
+      "client": 10,
+      "round": null,
+      "rows": 25896
+    },
+    {
+      "train_through": 0,
+      "client": 11,
+      "round": null,
+      "rows": 15005
+    },
+    {
+      "train_through": 0,
+      "client": 12,
+      "round": null,
+      "rows": 24959
+    },
+    {
+      "train_through": 0,
+      "client": 13,
+      "round": null,
+      "rows": 37296
+    },
+    {
+      "train_through": 0,
+      "client": 14,
+      "round": null,
+      "rows": 42501
+    },
+    {
+      "train_through": 1,
+      "client": 0,
+      "round": 0,
+      "rows": 2880
+    },
+    {
+      "train_through": 1,
+      "client": 0,
+      "round": null,
+      "rows": 25911
+    },
+    {
+      "train_through": 1,
+      "client": 1,
+      "round": 0,
+      "rows": 4704
+    },
+    {
+      "train_through": 1,
+      "client": 1,
+      "round": null,
+      "rows": 42334
+    },
+    {
+      "train_through": 1,
+      "client": 2,
+      "round": 0,
+      "rows": 4567
+    },
+    {
+      "train_through": 1,
+      "client": 2,
+      "round": null,
+      "rows": 41095
+    },
+    {
+      "train_through": 1,
+      "client": 3,
+      "round": 0,
+      "rows": 2821
+    },
+    {
+      "train_through": 1,
+      "client": 3,
+      "round": null,
+      "rows": 25387
+    },
+    {
+      "train_through": 1,
+      "client": 4,
+      "round": 0,
+      "rows": 10365
+    },
+    {
+      "train_through": 1,
+      "client": 4,
+      "round": null,
+      "rows": 93285
+    },
+    {
+      "train_through": 1,
+      "client": 5,
+      "round": 0,
+      "rows": 16410
+    },
+    {
+      "train_through": 1,
+      "client": 5,
+      "round": null,
+      "rows": 147687
+    },
+    {
+      "train_through": 1,
+      "client": 6,
+      "round": 0,
+      "rows": 20296
+    },
+    {
+      "train_through": 1,
+      "client": 6,
+      "round": null,
+      "rows": 182656
+    },
+    {
+      "train_through": 1,
+      "client": 7,
+      "round": 0,
+      "rows": 5243
+    },
+    {
+      "train_through": 1,
+      "client": 7,
+      "round": null,
+      "rows": 47183
+    },
+    {
+      "train_through": 1,
+      "client": 8,
+      "round": 0,
+      "rows": 5591
+    },
+    {
+      "train_through": 1,
+      "client": 8,
+      "round": null,
+      "rows": 50317
+    },
+    {
+      "train_through": 1,
+      "client": 9,
+      "round": 0,
+      "rows": 9169
+    },
+    {
+      "train_through": 1,
+      "client": 9,
+      "round": null,
+      "rows": 82520
+    },
+    {
+      "train_through": 1,
+      "client": 10,
+      "round": 0,
+      "rows": 16402
+    },
+    {
+      "train_through": 1,
+      "client": 10,
+      "round": null,
+      "rows": 147618
+    },
+    {
+      "train_through": 1,
+      "client": 11,
+      "round": 0,
+      "rows": 3943
+    },
+    {
+      "train_through": 1,
+      "client": 11,
+      "round": null,
+      "rows": 35485
+    },
+    {
+      "train_through": 1,
+      "client": 12,
+      "round": 0,
+      "rows": 8668
+    },
+    {
+      "train_through": 1,
+      "client": 12,
+      "round": null,
+      "rows": 78010
+    },
+    {
+      "train_through": 1,
+      "client": 13,
+      "round": 0,
+      "rows": 8889
+    },
+    {
+      "train_through": 1,
+      "client": 13,
+      "round": null,
+      "rows": 79997
+    },
+    {
+      "train_through": 1,
+      "client": 14,
+      "round": 0,
+      "rows": 9652
+    },
+    {
+      "train_through": 1,
+      "client": 14,
+      "round": null,
+      "rows": 86863
+    },
+    {
+      "train_through": 2,
+      "client": 0,
+      "round": null,
+      "rows": 29778
+    },
+    {
+      "train_through": 2,
+      "client": 1,
+      "round": null,
+      "rows": 48078
+    },
+    {
+      "train_through": 2,
+      "client": 2,
+      "round": 2,
+      "rows": 14261
+    },
+    {
+      "train_through": 2,
+      "client": 2,
+      "round": null,
+      "rows": 33271
+    },
+    {
+      "train_through": 2,
+      "client": 3,
+      "round": null,
+      "rows": 28503
+    },
+    {
+      "train_through": 2,
+      "client": 4,
+      "round": null,
+      "rows": 103658
+    },
+    {
+      "train_through": 2,
+      "client": 5,
+      "round": null,
+      "rows": 164177
+    },
+    {
+      "train_through": 2,
+      "client": 6,
+      "round": null,
+      "rows": 203965
+    },
+    {
+      "train_through": 2,
+      "client": 7,
+      "round": null,
+      "rows": 52440
+    },
+    {
+      "train_through": 2,
+      "client": 8,
+      "round": null,
+      "rows": 55971
+    },
+    {
+      "train_through": 2,
+      "client": 9,
+      "round": null,
+      "rows": 91963
+    },
+    {
+      "train_through": 2,
+      "client": 10,
+      "round": null,
+      "rows": 164150
+    },
+    {
+      "train_through": 2,
+      "client": 11,
+      "round": null,
+      "rows": 39837
+    },
+    {
+      "train_through": 2,
+      "client": 12,
+      "round": 0,
+      "rows": 9116
+    },
+    {
+      "train_through": 2,
+      "client": 12,
+      "round": null,
+      "rows": 82044
+    },
+    {
+      "train_through": 2,
+      "client": 13,
+      "round": 0,
+      "rows": 9673
+    },
+    {
+      "train_through": 2,
+      "client": 13,
+      "round": null,
+      "rows": 87052
+    },
+    {
+      "train_through": 2,
+      "client": 14,
+      "round": null,
+      "rows": 98175
+    },
+    {
+      "train_through": 3,
+      "client": 0,
+      "round": 0,
+      "rows": 3236
+    },
+    {
+      "train_through": 3,
+      "client": 0,
+      "round": null,
+      "rows": 29119
+    },
+    {
+      "train_through": 3,
+      "client": 1,
+      "round": 0,
+      "rows": 4949
+    },
+    {
+      "train_through": 3,
+      "client": 1,
+      "round": null,
+      "rows": 44535
+    },
+    {
+      "train_through": 3,
+      "client": 2,
+      "round": 0,
+      "rows": 5447
+    },
+    {
+      "train_through": 3,
+      "client": 2,
+      "round": null,
+      "rows": 49021
+    },
+    {
+      "train_through": 3,
+      "client": 3,
+      "round": 0,
+      "rows": 4729
+    },
+    {
+      "train_through": 3,
+      "client": 3,
+      "round": null,
+      "rows": 42552
+    },
+    {
+      "train_through": 3,
+      "client": 4,
+      "round": 0,
+      "rows": 11537
+    },
+    {
+      "train_through": 3,
+      "client": 4,
+      "round": null,
+      "rows": 103830
+    },
+    {
+      "train_through": 3,
+      "client": 5,
+      "round": 1,
+      "rows": 33456
+    },
+    {
+      "train_through": 3,
+      "client": 5,
+      "round": null,
+      "rows": 133823
+    },
+    {
+      "train_through": 3,
+      "client": 6,
+      "round": 0,
+      "rows": 21444
+    },
+    {
+      "train_through": 3,
+      "client": 6,
+      "round": null,
+      "rows": 192990
+    },
+    {
+      "train_through": 3,
+      "client": 7,
+      "round": 0,
+      "rows": 5548
+    },
+    {
+      "train_through": 3,
+      "client": 7,
+      "round": null,
+      "rows": 49929
+    },
+    {
+      "train_through": 3,
+      "client": 8,
+      "round": 0,
+      "rows": 6242
+    },
+    {
+      "train_through": 3,
+      "client": 8,
+      "round": null,
+      "rows": 56169
+    },
+    {
+      "train_through": 3,
+      "client": 9,
+      "round": 0,
+      "rows": 9667
+    },
+    {
+      "train_through": 3,
+      "client": 9,
+      "round": null,
+      "rows": 86995
+    },
+    {
+      "train_through": 3,
+      "client": 10,
+      "round": 0,
+      "rows": 17076
+    },
+    {
+      "train_through": 3,
+      "client": 10,
+      "round": null,
+      "rows": 153677
+    },
+    {
+      "train_through": 3,
+      "client": 11,
+      "round": 0,
+      "rows": 4470
+    },
+    {
+      "train_through": 3,
+      "client": 11,
+      "round": null,
+      "rows": 40228
+    },
+    {
+      "train_through": 3,
+      "client": 12,
+      "round": 3,
+      "rows": 37536
+    },
+    {
+      "train_through": 3,
+      "client": 12,
+      "round": null,
+      "rows": 56302
+    },
+    {
+      "train_through": 3,
+      "client": 13,
+      "round": null,
+      "rows": 98167
+    },
+    {
+      "train_through": 3,
+      "client": 14,
+      "round": null,
+      "rows": 99671
+    },
+    {
+      "train_through": 4,
+      "client": 0,
+      "round": null,
+      "rows": 32414
+    },
+    {
+      "train_through": 4,
+      "client": 1,
+      "round": null,
+      "rows": 49543
+    },
+    {
+      "train_through": 4,
+      "client": 2,
+      "round": null,
+      "rows": 55021
+    },
+    {
+      "train_through": 4,
+      "client": 3,
+      "round": null,
+      "rows": 47304
+    },
+    {
+      "train_through": 4,
+      "client": 4,
+      "round": null,
+      "rows": 115704
+    },
+    {
+      "train_through": 4,
+      "client": 5,
+      "round": null,
+      "rows": 167822
+    },
+    {
+      "train_through": 4,
+      "client": 6,
+      "round": null,
+      "rows": 214490
+    },
+    {
+      "train_through": 4,
+      "client": 7,
+      "round": 2,
+      "rows": 16872
+    },
+    {
+      "train_through": 4,
+      "client": 7,
+      "round": null,
+      "rows": 39366
+    },
+    {
+      "train_through": 4,
+      "client": 8,
+      "round": null,
+      "rows": 62420
+    },
+    {
+      "train_through": 4,
+      "client": 9,
+      "round": null,
+      "rows": 96732
+    },
+    {
+      "train_through": 4,
+      "client": 10,
+      "round": null,
+      "rows": 172879
+    },
+    {
+      "train_through": 4,
+      "client": 11,
+      "round": 0,
+      "rows": 4620
+    },
+    {
+      "train_through": 4,
+      "client": 11,
+      "round": null,
+      "rows": 41580
+    },
+    {
+      "train_through": 4,
+      "client": 12,
+      "round": null,
+      "rows": 93954
+    },
+    {
+      "train_through": 4,
+      "client": 13,
+      "round": null,
+      "rows": 98531
+    },
+    {
+      "train_through": 4,
+      "client": 14,
+      "round": null,
+      "rows": 100133
+    },
+    {
+      "train_through": 5,
+      "client": 0,
+      "round": null,
+      "rows": 33085
+    },
+    {
+      "train_through": 5,
+      "client": 1,
+      "round": null,
+      "rows": 50324
+    },
+    {
+      "train_through": 5,
+      "client": 2,
+      "round": null,
+      "rows": 55604
+    },
+    {
+      "train_through": 5,
+      "client": 3,
+      "round": null,
+      "rows": 47516
+    },
+    {
+      "train_through": 5,
+      "client": 4,
+      "round": 0,
+      "rows": 12149
+    },
+    {
+      "train_through": 5,
+      "client": 4,
+      "round": null,
+      "rows": 109332
+    },
+    {
+      "train_through": 5,
+      "client": 5,
+      "round": 0,
+      "rows": 6343
+    },
+    {
+      "train_through": 5,
+      "client": 5,
+      "round": null,
+      "rows": 57085
+    },
+    {
+      "train_through": 5,
+      "client": 6,
+      "round": null,
+      "rows": 224245
+    },
+    {
+      "train_through": 5,
+      "client": 7,
+      "round": 0,
+      "rows": 15744
+    },
+    {
+      "train_through": 5,
+      "client": 7,
+      "round": null,
+      "rows": 141687
+    },
+    {
+      "train_through": 5,
+      "client": 8,
+      "round": 0,
+      "rows": 9573
+    },
+    {
+      "train_through": 5,
+      "client": 8,
+      "round": null,
+      "rows": 86155
+    },
+    {
+      "train_through": 5,
+      "client": 9,
+      "round": 0,
+      "rows": 6899
+    },
+    {
+      "train_through": 5,
+      "client": 9,
+      "round": null,
+      "rows": 62090
+    },
+    {
+      "train_through": 5,
+      "client": 10,
+      "round": null,
+      "rows": 175593
+    },
+    {
+      "train_through": 5,
+      "client": 11,
+      "round": null,
+      "rows": 46211
+    },
+    {
+      "train_through": 5,
+      "client": 12,
+      "round": null,
+      "rows": 94331
+    },
+    {
+      "train_through": 5,
+      "client": 13,
+      "round": null,
+      "rows": 101900
+    },
+    {
+      "train_through": 5,
+      "client": 14,
+      "round": null,
+      "rows": 100892
+    }
+  ],
+  "fit": [
+    {
+      "train_through": 0,
+      "local_seconds": 27.86,
+      "cloud_seconds": 10.0,
+      "clients_updated": 15
+    },
+    {
+      "train_through": 1,
+      "local_seconds": 155.77,
+      "cloud_seconds": 95.61,
+      "clients_updated": 15
+    },
+    {
+      "train_through": 2,
+      "local_seconds": 227.49,
+      "cloud_seconds": 132.69,
+      "clients_updated": 15
+    },
+    {
+      "train_through": 3,
+      "local_seconds": 313.36,
+      "cloud_seconds": 181.11,
+      "clients_updated": 15
+    },
+    {
+      "train_through": 4,
+      "local_seconds": 414.77,
+      "cloud_seconds": 206.33,
+      "clients_updated": 15
+    },
+    {
+      "train_through": 5,
+      "local_seconds": 442.47,
+      "cloud_seconds": 228.62,
+      "clients_updated": 15
+    }
+  ]
+}
