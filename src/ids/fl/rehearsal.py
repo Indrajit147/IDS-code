@@ -26,11 +26,12 @@ class RehearsalBuffer:
             left -= out[c]
         return out
 
-    def add(self, X: np.ndarray, y: np.ndarray) -> None:
+    def add(self, X: np.ndarray, y: np.ndarray, keys_in: np.ndarray | None = None) -> None:
+        """keys_in (values in [0, 1], smaller kept first) replaces the random keys: M12's boundary selection passes the rows' margins."""
         for c in np.unique(y):
             c = int(c)
             m = y == c
-            keys = self.rng.random(int(m.sum()))
+            keys = self.rng.random(int(m.sum())) if keys_in is None else np.asarray(keys_in, float)[m]
             self.keys[c] = np.concatenate([self.keys[c], keys]) if c in self.keys else keys
             self.rows[c] = np.concatenate([self.rows[c], X[m]]) if c in self.rows else X[m].copy()
         for c, q in self._quotas().items():

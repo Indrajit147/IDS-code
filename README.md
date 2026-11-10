@@ -38,6 +38,7 @@ python scripts/m9_e4.py --pool dev --set resources.n_jobs=4 --only NAME --resume
 python scripts/m10_shap.py --pool dev --set resources.n_jobs=4               # TreeSHAP of e4_added (D11); --only fit|shap; reports/m10/<pool>/
 python scripts/m11_verify.py --pool dev --set resources.n_jobs=4             # LLM verifier (stub locally; llm.backend=hf on a GPU); --only fit|llm; reports/m11/<pool>/
 python scripts/m11_subset.py --env kaggle --set llm.backend=hf llm.model_id=<path>  # second verifier on a subset of seed 42's M11 rows; reports/m11/full/mistral/
+python scripts/m12_policy.py --pool dev --set resources.n_jobs=4             # policy agent: none, heuristic, llm arms (policy.backend=hf on a GPU); --only ARM, --report; reports/m12/<pool>/
 ```
 
 On Kaggle, open `notebooks/kaggle_bootstrap.ipynb`. It clones this repo, installs it with `--no-deps`, and auto-discovers the attached data under `/kaggle/input`. The environment is detected automatically and can be forced with `IDS_ENV=local|kaggle`. The Kaggle dataset needs only the five files of `data/processed/`: `data_manifest.json`, `wifi_mqtt_full.parquet`, `wifi_mqtt_dev.parquet`, `wifi_profiling.parquet` and `ble.parquet`.
@@ -72,7 +73,7 @@ Rules:
 | M9  | Drift-triggered updates, feature selection, adaptive threshold | E4, Methodology Step 5 | ✅ Done (dev + full, two seeds); `e4_added` carried forward (D11) | — |
 | M10 | SHAP explainability (local + global store)         | Novelty claim C               | ✅ Done (dev one seed, full pool two seeds) | 2026-11-08 |
 | M11 | Cloud LLM verifier (gated, JSON-constrained)       | E5, E6, novelty claim A       | ✅ Full pool: neither verifier helps. Gemma 2 2B (seeds 42, 43) relabels ddos as dos, D3 contains the damage; Mistral 7B (subset) agrees with the edge and fails the JSON contract on 19% | — |
-| M12 | LLM adaptation-policy agent (training decisions)   | "What changes through LLM reasoning" | ⬜ Not started | — |
+| M12 | LLM adaptation-policy agent (training decisions)   | "What changes through LLM reasoning" | 🟨 Built and checked on dev; full pool with Gemma 2 2B pending on Kaggle | — |
 | M13 | Federated GBDT baseline (stretch)                  | E7                            | ⬜ Not started | — |
 | M14 | Full experiment matrix, ablations & sensitivity    | E1–E7, ablations, H1–H4       | ⬜ Not started | — |
 | M15 | Reproducibility package & paper artifacts          | Notebook A/B, IoT-J outline   | ⬜ Not started | — |
@@ -260,7 +261,7 @@ IDS-code/
 │   ├── llm/           # (planned) backend, prompts, schema, verifier, policy agent
 │   └── utils/         # seed, jsonl, config, run
 ├── scripts/                      # CLI entry points per milestone
-├── notebooks/                    # kaggle_bootstrap, m3_kaggle (M3 to M5), m6_kaggle, m7_kaggle, m8_kaggle, m8_dirty_check, m9_kaggle, m10_kaggle, m11_kaggle, m11_mistral_kaggle; later Notebook A (train/FL) and B (inference/LLM/XAI)
+├── notebooks/                    # kaggle_bootstrap, m3_kaggle (M3 to M5), m6_kaggle, m7_kaggle, m8_kaggle, m8_dirty_check, m9_kaggle, m10_kaggle, m11_kaggle, m11_mistral_kaggle, m12_kaggle; later Notebook A (train/FL) and B (inference/LLM/XAI)
 ├── tests/
 ├── reports/m<k>/                 # tracked milestone reports (EDA, figures, manifests)
 └── results/runs/<run_id>/        # untracked: config snapshot, metrics, logs, models
@@ -929,12 +930,66 @@ SHAP is computed only for rows sent to the LLM.
 
 ### M12: LLM adaptation-policy agent (training-time decisions)
 **Goal:** the "explanation" document's extension: the LLM decides *how* to learn next, never the model internals.
-- [ ] Policy JSON: `update_urgency`, `training_style` (conservative/aggressive), `preserve_old_behavior`, `feature_focus_groups`, buffer selection policy, `update_scope` (partial/full)
-- [ ] Map each field to concrete knobs: learning rate, number of new trees, rehearsal ratio, feature weights, update delay
-- [ ] Inputs: drift registry, SHAP drift, per-class metrics; output logged as the next-window policy file
-- [ ] Ablation: LLM policy vs a fixed heuristic policy vs no policy
+- [x] Policy JSON: `update_urgency`, `training_style`, `preserve_old_behavior`, `feature_focus_groups`, `buffer_selection`, `update_scope`, plus `reasons` (`src/ids/llm/policy.py`)
+- [x] Each field mapped to a training knob, applied deterministically (`scripts/m12_policy.py`)
+- [x] Inputs: drift registry, SHAP drift, per-class metrics; each decision is logged with its evidence (`decisions_<arm>.jsonl`), and every prompt and reply too
+- [ ] Ablation: LLM policy vs a fixed heuristic policy vs no policy, full pool on Kaggle (seeds 42 and 43)
 - **Note:** the main proposal says the LLM is "not used for continuous learning", while the explanation document gives it control over training decisions. The paper must state clearly that the LLM controls the training *policy* only.
 - **Acceptance:** the policy is applied deterministically, and the ablation results are recorded.
+
+**Design, fixed on 2026-11-10 before any M12 result (the user asked to start M12; the choices below are mine unless marked as the explanation document's).**
+
+*What the explanation document fixes* ("What Changes Through LLM Reasoning"): the LLM "observes and controls the training" and "doesn't change anything inside the model". It decides when the update runs ("update_urgency": "low" means the update is delayed and conservative training is scheduled), how aggressive it is ("training_style": conservative means a lower effective learning rate and fewer new trees), whether the rehearsal buffer gets more weight ("preserve_old_behavior": true means more buffer samples, less forgetting), which feature groups get priority ("feature_focus_groups", with feature values unchanged), which rows the buffer keeps (boundary-critical against stable), and whether the update is partial or full ("full only when necessary"). It writes a structured JSON policy for the next window, logged for governance.
+
+*Base:* E4 as carried forward (D11, `e4_added`), with M9's K and code. The arms differ only in the policy.
+
+*When a policy is decided:* once per client and window, at the client's first update point in that window. In E4 that is an ADWIN trigger if one fires, else the window's end. The policy holds for that window's updates. At t0, every client fits with the default policy. This is my reading of "next-window policy": the decision is made just before the client trains, from what it has seen so far, so it is causal.
+
+*Evidence the client reports (summaries, no rows):*
+- whether ADWIN fired, and when;
+- the model's error on the new rows against its error on its own validation rows;
+- classes in the new rows the model hasn't trained on;
+- class shares of the new rows and of the buffer;
+- per-class validation F1;
+- the share of features whose PSI against the client's earlier rows passes the alert level, and the 5 most shifted features;
+- SHAP drift: 1 − Spearman ρ between the model's mean |SHAP| on 200 new rows and on 200 buffer rows (M10's measure);
+- the top 5 SHAP features on the new rows;
+- the client's previous policy.
+
+Class shares and error rates come from the client's own labelled training rows, which are already used to train, and they reach the cloud as summaries only. The test rows are never read.
+
+*Knobs:*
+
+| field | values | what it sets |
+|---|---|---|
+| `update_urgency` | low, medium, high | low skips that update and keeps the rows: at a trigger, the window's end still updates; at the end, the rows wait for the next window, as M9's `e4` does. Medium and high both update as E4 does, so they act the same; high is kept because the document names urgency levels. |
+| `training_style` | conservative, standard, aggressive | learning rate and new-tree budget × 0.5, × 1 or × 1.5 (early stopping still applies) |
+| `preserve_old_behavior` | true, false | buffer rows weigh × 2 in training |
+| `feature_focus_groups` | 0 to 2 of tcp_flags, protocol, rate_timing, packet_size | those groups' features weigh × 1.5: XGBoost's column sampling and LightGBM's split gain. Features outside the top-K stay excluded |
+| `buffer_selection` | uniform, boundary | boundary keeps, per class, the new rows with the smallest margin between the top two classes; uniform is M6's random choice |
+| `update_scope` | partial, full | full refits both boosters from scratch on the new rows and the buffer; partial adds trees |
+
+The multipliers and the four feature groups are my assumptions: the document gives directions, not sizes. The default policy (medium, standard, false, none, uniform, partial) is exactly E4.
+
+*Arms:*
+- **none:** the default policy at every decision. It must match M9's `e4_added`, which checks that the policy code changes nothing by itself.
+- **heuristic:** a fixed rule-based policy on the same evidence, with thresholds fixed now:
+  - urgency high on a new class; medium if ADWIN fired, the error rose by more than 0.02, or at least 25% of features shifted; else low;
+  - style aggressive on a new class, standard if ADWIN fired, else conservative;
+  - preserve on a new class or a trigger;
+  - focus on the groups of the 3 most shifted features, when at least 25% shifted;
+  - buffer boundary on a trigger;
+  - scope full when SHAP drift is above 0.5 and no class is new.
+- **llm:** the policy the LLM returns: Gemma 2 2B instruct (the proposal's default model; it met M11's JSON contract), 4-bit, greedy decoding. The prompt names each field's effect. A reply that fails validation is retried up to 2 times with the error, then the default policy applies.
+
+*Metrics:* M9's: macro-F1 per window on the `csv_only` test rows, the window average with and without t0, the final window, next-window macro-F1 (the model through t on window t+1), and class forgetting. Plus decision statistics: the share of each field's values, valid replies, and seconds per decision. On dev, the llm arm runs the heuristic through the LLM path (prompt, parse, log), so it must reproduce the heuristic arm exactly. That is a pipeline check, not a result.
+
+**Pipeline check, dev pool (2026-11-10, seed 42, 4 threads).** [`reports/m12/dev/POLICY.md`](reports/m12/dev/POLICY.md)
+
+- The none arm matches M9's `e4_added` exactly in every window (largest difference 0.000000), so the policy code changes nothing at the default policy.
+- The llm arm, given the heuristic's replies through the prompt, parser and log, makes the same decision as the heuristic arm at all 75 decision points and reproduces its scores exactly.
+- New classes arrive as the timeline sets them: one category per window at t1 to t4, for all 15 clients, and none at t5. So the heuristic picks high urgency and aggressive training at 80% of its decisions. 49% of decisions come at an ADWIN trigger.
+- On dev the heuristic is below E4: window average 0.8996 against 0.9079, final 0.8561 against 0.8731. This is one seed on the dev sample, so it is not a result. The full pool decides.
 
 ### M13: Federated GBDT baseline (stretch)
 **Goal:** E7, a "true" federated boosting reference.
@@ -991,6 +1046,7 @@ SHAP is computed only for rows sent to the LLM.
 | 2026-11-08 | M11 🟨 (built) | Design fixed in the README before any result. Verifier module (payload, JSON contract, retry with the error, fallback, D3, JSONL log), a read-only hook in M9's gate, `scripts/m11_verify.py` and `notebooks/m11_kaggle.ipynb` (Gemma 2 2B, 4-bit, T4). Dev pipeline check with a stub: refit matches M9 exactly at 4 threads, outputs checked separately. Full pool on Kaggle next. |
 | 2026-11-09 | M11 ✅ | Full pool, Gemma 2 2B, seeds 42 and 43, checked separately. The verifier lowers macro-F1 slightly in every setting (boundary E5 0.6763 / 0.6776 against the edge's 0.6776 / 0.6785) and never changes the false-positive rate, so H3 isn't supported with this model. D3 holds the loss to at most 0.003; without it, always-on rows lose 0.19 to 0.23. Gemma relabels nearly every ddos as dos. ≥99% valid after retries. Mistral 7B subset open. |
 | 2026-11-10 | M11 Mistral subset | Mistral 7B Instruct v0.2 on 4,960 of seed 42's verifier rows, paired with Gemma. It agrees with the edge on 99.85% of valid replies (2 D3 changes), is 81% valid after retries (below the 99% bar; `\_` escapes are the main cause), and runs at 0.32 rows per second. H3 not supported with either model. |
+| 2026-11-10 | M12 🟨 (built) | Design fixed in the README before any result: one policy per client and window at its first update point; six fields mapped to update timing, learning rate and tree budget, buffer weight, feature weights, buffer selection, and refit scope. Arms none, heuristic and llm. Dev check: none matches M9 exactly, and the llm path reproduces the heuristic exactly. `notebooks/m12_kaggle.ipynb` for the full pool with Gemma 2 2B. |
 | 2026-11-08 | M10 ✅ | Full pool, seeds 42 and 43, at `bee20e1`, all runs clean, figures recomputed from the stores. Local TreeSHAP costs about 100 times inference on one thread (36.5 and 40.2 ms per row at t5), so explaining every prediction isn't practical. The SHAP drift signal is above its noise floor at t1, t3 and t5 in both seeds and at the floor at t4. The refit differs from M9's scores by up to 0.0016 from t2 on, the known unexplained rerun drift. The first Kaggle attempt failed on a stale clone; the notebook now stops early on one. |
 | 2026-11-08 | M10 🟨 (dev) | TreeSHAP of `e4_added` (D11) built with XGBoost's and LightGBM's own exact TreeSHAP: local top-5 store, global rankings, SHAP drift signal, cost. The refit matches M9 exactly. Local SHAP costs about 140 times inference at t5 on one thread. The drift signal is small but above its noise floor at every boundary, t1 included. Full pool next. |
 | 2026-11-08 | D11 decided | The user chose `e4_added` (the trigger added to the fixed schedule) as the E4 that E5 and E6 build on. It was chosen after seeing the full-pool results, and is reported that way. `e4` stays in the M9 report. |
