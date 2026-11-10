@@ -74,7 +74,7 @@ Rules:
 | M10 | SHAP explainability (local + global store)         | Novelty claim C               | ✅ Done (dev one seed, full pool two seeds) | 2026-11-08 |
 | M11 | Cloud LLM verifier (gated, JSON-constrained)       | E5, E6, novelty claim A       | ✅ Full pool: neither verifier helps. Gemma 2 2B (seeds 42, 43) relabels ddos as dos, D3 contains the damage; Mistral 7B (subset) agrees with the edge and fails the JSON contract on 19% | — |
 | M12 | LLM adaptation-policy agent (training decisions)   | "What changes through LLM reasoning" | 🟨 Full pool seed 42 done (Gemma 2 2B delays every update and loses 0.10 window-average macro-F1; the heuristic ties E4); seed 43 pending | — |
-| M13 | Federated GBDT baseline (stretch)                  | E7                            | 🟨 Built; dev and full pool pending on Kaggle (CPU only) | — |
+| M13 | Federated GBDT baseline (stretch)                  | E7                            | ✅ Done: E7 within 0.008 of E1, 0.044 below E3; uplink 760 to 3,200 times E3's | — |
 | M14 | Full experiment matrix, ablations & sensitivity    | E1–E7, ablations, H1–H4       | ⬜ Not started | — |
 | M15 | Reproducibility package & paper artifacts          | Notebook A/B, IoT-J outline   | ⬜ Not started | — |
 
@@ -1016,7 +1016,7 @@ The multipliers and the four feature groups are my assumptions: the document giv
 ### M13: Federated GBDT baseline (stretch)
 **Goal:** E7, a "true" federated boosting reference.
 - [x] Horizontal federated GBDT by histogram aggregation, relaxed privacy (`src/ids/fl/fedgbdt.py`, `scripts/m13_fedgbdt.py`)
-- [ ] Results on the full pool (Kaggle, CPU only), seed 42
+- [x] Results on the dev and full pools (Kaggle, CPU only), seed 42
 - **Acceptance:** the gap to E1 and E3 is reported, or the baseline is documented as infeasible with reasons.
 
 **Design, fixed on 2026-11-10 before any M13 result (my choices unless marked as the proposal's).**
@@ -1030,6 +1030,29 @@ The multipliers and the four feature groups are my assumptions: the document giv
 *Measured:* M6's metrics on the `csv_only` rows (the window average with and without t0, final, class forgetting, per window), against E1 (M3), M6's naive incremental (local, no rehearsal), E3 (M7) and E4 (M9, `e4_added`), all seed 42. Also: wall time per window, model size, and uplink bytes per client per window. The uplink is counted as an upper bound: one histogram (features × 256 bins × gradient and Hessian, 8 bytes each) per tree node, without XGBoost's subtraction trick, which halves it. The sketch exchange isn't counted. This is set against E3's soft-label uplink from M7.
 
 *Where it runs:* Kaggle, CPU only (`notebooks/m13_kaggle.ipynb`, dev pool then full pool). Fifteen XGBoost worker processes don't fit in the 7.7 GB local machine (it paged and stalled with 8 of 15 started). Locally I checked the protocol with 3 workers (`tests/test_m13.py`: every client ends with a byte-identical model, continued training adds the trees, and 95% or more of predictions agree with pooled training) and ran the whole script on dev with 3 of the 15 clients as a smoke test. Its scores aren't a result.
+
+**Results, full pool, seed 42 (2026-11-10, Kaggle CPU, 4 vCPU, commit a65bf5f, clean; 19 min).** [`reports/m13/full/FEDGBDT.md`](reports/m13/full/FEDGBDT.md)
+
+| method | window avg | avg excl. t0 | final | class forgetting |
+|---|---:|---:|---:|---:|
+| **E7 federated GBDT** | 0.8814 | 0.8577 | 0.8525 | 0.0323 |
+| E1 centralized (M3) | 0.8897 | 0.8677 | 0.8668 | 0.0277 |
+| Naive incremental, local (M6) | 0.9211 | 0.9054 | 0.8979 | 0.0240 |
+| E3 DA-FedDistill (M7) | 0.9257 | 0.9109 | 0.8947 | 0.0245 |
+| E4 (M9, `e4_added`) | 0.9244 | 0.9094 | 0.8925 | 0.0288 |
+
+| window | t0 | t1 | t2 | t3 | t4 | t5 |
+|---|---:|---:|---:|---:|---:|---:|
+| E7 macro-F1 | 1.000 | 0.823 | 0.862 | 0.888 | 0.862 | 0.852 |
+| E7 uplink per client, upper bound (MB) | 998 | 7,722 | 7,239 | 11,438 | 13,349 | 13,878 |
+| E3 uplink per client, raw (MB) | 1.31 | 4.11 | 4.16 | 4.32 | 4.33 | 4.34 |
+
+- **The gap to E1 (the acceptance check): −0.0083 window average and −0.014 at t5.** Federated boosting comes close to centralized training even though it only adds 50 trees per window on that window's rows, while E1 refits on every window so far. The gap widens at t4 and t5 (−0.018 and −0.014), where E7 has no buffer and E1 sees all old rows.
+- **The gap to E3: −0.044 window average and −0.042 at t5.** E7 is one global model, like E1, and both sit at about 0.88 to 0.89. The per-client methods (M6 local, E3, E4) sit at about 0.92. As M6 notes, a global model against one model per client isn't like for like, and this design can't say how much is personalisation and how much is the protocol.
+- **Communication: about 760 to 3,200 times E3's uplink per window** (998 MB against 1.31 MB at t0, 13.9 GB against 4.34 MB at t5). This is an upper bound: XGBoost's subtraction trick halves it, which still leaves it 380 to 1,600 times higher. The histograms go up once per tree level for every round, so the cost grows with depth × rounds × classes × features × bins, while E3's grows only with the D_pub rows. That, and not accuracy, is the case against federated boosting here, and it is what the proposal's "heavy for Kaggle" anticipated, even before any encryption.
+- **Cost on Kaggle: 80 to 207 s per window** across 15 worker processes on 4 vCPU; the t5 model is 11.7 MB (300 rounds × 6 class trees).
+- **Dev pool (pipeline check):** window average 0.8811 against E1's 0.8844; the same picture. [`reports/m13/dev/FEDGBDT.md`](reports/m13/dev/FEDGBDT.md)
+- One seed. Rehearsal and feature selection aren't part of E7 in the proposal and weren't tried; adding a buffer could close part of the t4 and t5 gap to E1.
 
 ### M14: Full experiment matrix, ablations & sensitivity
 **Goal:** every number the paper needs.
@@ -1084,6 +1107,7 @@ The multipliers and the four feature groups are my assumptions: the document giv
 | 2026-11-10 | M12 🟨 (built) | Design fixed in the README before any result: one policy per client and window at its first update point; six fields mapped to update timing, learning rate and tree budget, buffer weight, feature weights, buffer selection, and refit scope. Arms none, heuristic and llm. Dev check: none matches M9 exactly, and the llm path reproduces the heuristic exactly. `notebooks/m12_kaggle.ipynb` for the full pool with Gemma 2 2B. |
 | 2026-11-10 | M12 🟨 (seed 42) | Full pool, seed 42: none 0.9241 window average (within 0.0011 of M9's E4), heuristic 0.9241, llm (Gemma 2 2B) 0.8218. Gemma chose urgency low at all 75 decisions, so at t2 and t4 only 3 and 2 of 15 clients updated. A first run had failed because the processed dataset wasn't attached; the notebook now checks for it. Seed 43 pending. |
 | 2026-11-10 | M13 🟨 (built) | Design fixed in the README before any result: E7 as horizontal federated XGBoost by histogram aggregation (XGBoost's collective, one worker process per client, relaxed privacy), incremental per window, M6's budgets, global balanced weights. Deviation: histogram aggregation instead of the LSH method of [16]. Protocol test and a 3-client smoke run pass locally; `notebooks/m13_kaggle.ipynb` runs dev and full on a Kaggle CPU session. M12 seed 43 waits for the GPU quota. |
+| 2026-11-10 | M13 ✅ | Full pool, seed 42 on Kaggle CPU (19 min): E7 window average 0.8814, 0.0083 below E1 and 0.044 below E3. The uplink upper bound is 1.0 to 13.9 GB per client per window against E3's 1.3 to 4.3 MB. Dev pool: 0.8811. |
 | 2026-11-08 | M10 ✅ | Full pool, seeds 42 and 43, at `bee20e1`, all runs clean, figures recomputed from the stores. Local TreeSHAP costs about 100 times inference on one thread (36.5 and 40.2 ms per row at t5), so explaining every prediction isn't practical. The SHAP drift signal is above its noise floor at t1, t3 and t5 in both seeds and at the floor at t4. The refit differs from M9's scores by up to 0.0016 from t2 on, the known unexplained rerun drift. The first Kaggle attempt failed on a stale clone; the notebook now stops early on one. |
 | 2026-11-08 | M10 🟨 (dev) | TreeSHAP of `e4_added` (D11) built with XGBoost's and LightGBM's own exact TreeSHAP: local top-5 store, global rankings, SHAP drift signal, cost. The refit matches M9 exactly. Local SHAP costs about 140 times inference at t5 on one thread. The drift signal is small but above its noise floor at every boundary, t1 included. Full pool next. |
 | 2026-11-08 | D11 decided | The user chose `e4_added` (the trigger added to the fixed schedule) as the E4 that E5 and E6 build on. It was chosen after seeing the full-pool results, and is reported that way. `e4` stays in the M9 report. |
