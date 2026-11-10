@@ -1,0 +1,155 @@
+{
+  "pool": "dev",
+  "seed": 42,
+  "backend": "heuristic",
+  "arms": {
+    "none": {
+      "macro_f1_by_window": {
+        "0": 0.9944857160810625,
+        "1": 0.8829628827802131,
+        "2": 0.9051561731636489,
+        "3": 0.9026640046074871,
+        "4": 0.889189992107811,
+        "5": 0.8731044283697624
+      },
+      "window_avg_macro_f1": 0.9079271995183308,
+      "window_avg_macro_f1_excl_t0": 0.8906154962057844,
+      "final_macro_f1": 0.8731044283697624,
+      "mean_forgetting_by_class": 0.03230894633102362,
+      "next_window_macro_f1": {
+        "0": 0.4513701584529916,
+        "1": 0.5963961243446383,
+        "2": 0.48019889979052205,
+        "3": 0.6497804192235211,
+        "4": 0.8033578572604138
+      },
+      "next_window_avg": 0.5962206918144174,
+      "against_m9_e4_added": 0.0
+    },
+    "heuristic": {
+      "macro_f1_by_window": {
+        "0": 0.9944857160810625,
+        "1": 0.8739237586974323,
+        "2": 0.8969490993297431,
+        "3": 0.8967739153218105,
+        "4": 0.8794616844469507,
+        "5": 0.8560680896185363
+      },
+      "window_avg_macro_f1": 0.899610377249256,
+      "window_avg_macro_f1_excl_t0": 0.8806353094828946,
+      "final_macro_f1": 0.8560680896185363,
+      "mean_forgetting_by_class": 0.031438220999034004,
+      "next_window_macro_f1": {
+        "0": 0.4513701584529916,
+        "1": 0.5897918474579688,
+        "2": 0.4790005578272475,
+        "3": 0.6455495516471964,
+        "4": 0.8002409541444515
+      },
+      "next_window_avg": 0.593190613905971
+    },
+    "llm": {
+      "macro_f1_by_window": {
+        "0": 0.9944857160810625,
+        "1": 0.8739237586974323,
+        "2": 0.8969490993297431,
+        "3": 0.8967739153218105,
+        "4": 0.8794616844469507,
+        "5": 0.8560680896185363
+      },
+      "window_avg_macro_f1": 0.899610377249256,
+      "window_avg_macro_f1_excl_t0": 0.8806353094828946,
+      "final_macro_f1": 0.8560680896185363,
+      "mean_forgetting_by_class": 0.031438220999034004,
+      "next_window_macro_f1": {
+        "0": 0.4513701584529916,
+        "1": 0.5897918474579688,
+        "2": 0.4790005578272475,
+        "3": 0.6455495516471964,
+        "4": 0.8002409541444515
+      },
+      "next_window_avg": 0.593190613905971
+    }
+  },
+  "decisions_heuristic": {
+    "decisions": 75,
+    "valid": 1.0,
+    "first_try_valid": 1.0,
+    "seconds": {
+      "n": 75,
+      "mean_ms": 873.3066666666666,
+      "p50_ms": 830.0000000000001,
+      "p95_ms": 1942.4999999999998
+    },
+    "at_trigger": 0.49333333333333335,
+    "shares": {
+      "update_urgency": {
+        "high": 0.8,
+        "medium": 0.12,
+        "low": 0.08
+      },
+      "training_style": {
+        "aggressive": 0.8,
+        "conservative": 0.147,
+        "standard": 0.053
+      },
+      "preserve_old_behavior": {
+        "true": 0.853,
+        "false": 0.147
+      },
+      "buffer_selection": {
+        "uniform": 0.507,
+        "boundary": 0.493
+      },
+      "update_scope": {
+        "partial": 1.0
+      }
+    },
+    "focus_groups": {
+      "packet_size": 20,
+      "tcp_flags": 7,
+      "rate_timing": 2
+    }
+  },
+  "decisions_llm": {
+    "decisions": 75,
+    "valid": 1.0,
+    "first_try_valid": 1.0,
+    "seconds": {
+      "n": 75,
+      "mean_ms": 887.76,
+      "p50_ms": 817.0000000000001,
+      "p95_ms": 1959.4999999999998
+    },
+    "at_trigger": 0.49333333333333335,
+    "shares": {
+      "update_urgency": {
+        "high": 0.8,
+        "medium": 0.12,
+        "low": 0.08
+      },
+      "training_style": {
+        "aggressive": 0.8,
+        "conservative": 0.147,
+        "standard": 0.053
+      },
+      "preserve_old_behavior": {
+        "true": 0.853,
+        "false": 0.147
+      },
+      "buffer_selection": {
+        "uniform": 0.507,
+        "boundary": 0.493
+      },
+      "update_scope": {
+        "partial": 1.0
+      }
+    },
+    "focus_groups": {
+      "packet_size": 20,
+      "tcp_flags": 7,
+      "rate_timing": 2
+    }
+  },
+  "llm_equals_heuristic": 1.0
+}

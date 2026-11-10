@@ -211,11 +211,13 @@ def client_streams(cfg, models, ids, rows_pre, rows_post, carry, key) -> dict:
     return {"streams": out, "carry": new_carry}
 
 
-def run_pass(cfg, name, window_rows, X_pub, y_pub, intro, ev, log, k=None, save=None, hook=None) -> dict:
+def run_pass(cfg, name, window_rows, X_pub, y_pub, intro, ev, log, k=None, save=None, hook=None, clients=None) -> dict:
     """save: a folder for each window's client models (M10 explains them); hook: called with the gate's inputs (M11).
-    Neither changes any result."""
+    Neither changes any result. clients: a ready StreamClients subclass (M12's policy clients); its trigger is used."""
     sc, trigger = cfg["schedule"], {"e4": "error", "e4_added": "error", "e4_schedule": "error", "e4_label_free": "disagreement"}.get(name)
-    clients = StreamClients(cfg, window_rows, k=k, trigger=trigger, end_all=name == "e4_added")
+    if clients is None:
+        clients = StreamClients(cfg, window_rows, k=k, trigger=trigger, end_all=name == "e4_added")
+    trigger = clients.trigger
     out = {"comm": [], "gate": [], "gate_val": [], "curves": [], "fit": [], "val": [], "k": k}
     tests = ev.test_sets
     carry_test, carry_val = {}, {}

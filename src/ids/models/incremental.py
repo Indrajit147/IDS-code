@@ -51,19 +51,26 @@ class IncrementalEdge:
         self.n_updates = 0
         self.xgb_retries = 0      # updates trained again because a new tree left the allowed features
 
-    def update(self, X: np.ndarray, y: np.ndarray, Xv: np.ndarray, yv: np.ndarray, allowed: np.ndarray | None = None) -> "IncrementalEdge":
+    def update(self, X: np.ndarray, y: np.ndarray, Xv: np.ndarray, yv: np.ndarray, allowed: np.ndarray | None = None,
+               row_scale: np.ndarray | None = None, feature_scale: np.ndarray | None = None, lr_scale: float = 1.0, tree_scale: float = 1.0) -> "IncrementalEdge":
         """Add trees on (X, y); the first call fits the full configured number of rounds.
 
-        allowed limits the new trees to these feature indices. Older trees keep their splits, so inference still needs every feature."""
+        allowed limits the new trees to these feature indices. Older trees keep their splits, so inference still needs every feature.
+        The scales are M12's policy knobs; left at their defaults, the update is exactly the one without them."""
         c = self.cfg
         sw, swv = balanced_weights(y, c.weight_cap), balanced_weights(yv, c.weight_cap)
+        if row_scale is not None:
+            sw = sw * row_scale
         xp = {k: v for k, v in c.xgb_params.items() if k != "n_estimators"}
         lp = {k: v for k, v in c.lgb_params.items() if k != "n_estimators"}
+        if lr_scale != 1.0:
+            xp["learning_rate"], lp["learning_rate"] = xp["learning_rate"] * lr_scale, lp["learning_rate"] * lr_scale
+        new = max(1, round(self.new_trees * tree_scale))
 
-        rounds = self.new_trees if self.n_updates else c.xgb_params["n_estimators"]
-        self.xgb_ = self._boost_xgb(xp, X, y, sw, Xv, yv, swv, rounds, allowed)
-        rounds = self.new_trees if self.n_updates else c.lgb_params["n_estimators"]
-        self.lgb_ = self._boost_lgb(lp, X, y, sw, Xv, yv, swv, rounds, allowed)
+        rounds = new if self.n_updates else c.xgb_params["n_estimators"]
+        self.xgb_ = self._boost_xgb(xp, X, y, sw, Xv, yv, swv, rounds, allowed, feature_scale)
+        rounds = new if self.n_updates else c.lgb_params["n_estimators"]
+        self.lgb_ = self._boost_lgb(lp, X, y, sw, Xv, yv, swv, rounds, allowed, feature_scale)
 
         px, pl = self._raw(Xv)
         losses = {w: nll(w * px + (1 - w) * pl, yv) for w in c.fusion_grid}
@@ -72,7 +79,7 @@ class IncrementalEdge:
         self.n_updates += 1
         return self
 
-    def _boost_xgb(self, params, X, y, sw, Xv, yv, swv, rounds, allowed=None) -> xgb.Booster:
+    def _boost_xgb(self, params, X, y, sw, Xv, yv, swv, rounds, allowed=None, scale=None) -> xgb.Booster:
         c = self.cfg
         params = {"objective": "multi:softprob", "num_class": c.n_classes, "tree_method": "hist",
                   "eval_metric": "mlogloss", "nthread": c.n_jobs, "seed": c.seed,
@@ -80,10 +87,12 @@ class IncrementalEdge:
         train = xgb.DMatrix(X, y, weight=sw)
         evals = [(xgb.DMatrix(Xv, yv, weight=swv), "val")]
         if allowed is None:
+            if scale is not None:
+                train.set_info(feature_weights=scale)     # column sampling favours the larger weights (colsample < 1)
             b = xgb.train(params, train, rounds, evals=evals, early_stopping_rounds=c.early_stopping, xgb_model=self.xgb_, verbose_eval=False)
             return b[: b.best_iteration + 1]
         weights = np.zeros(X.shape[1])
-        weights[allowed] = 1
+        weights[allowed] = 1 if scale is None else scale[allowed]
         train.set_info(feature_weights=weights)
         # A zero weight only holds while the sample fits inside the allowed set; past that XGBoost draws forbidden features.
         params = {**params, "colsample_bytree": params.get("colsample_bytree", 1.0) * len(allowed) / X.shape[1]}
@@ -100,13 +109,14 @@ class IncrementalEdge:
             self.xgb_retries += 1
         raise RuntimeError(f"XGBoost split on features outside the allowed set in 5 attempts: {sorted(used - set(map(int, allowed)))}")
 
-    def _boost_lgb(self, params, X, y, sw, Xv, yv, swv, rounds, allowed=None) -> lgb.Booster:
+    def _boost_lgb(self, params, X, y, sw, Xv, yv, swv, rounds, allowed=None, scale=None) -> lgb.Booster:
         c = self.cfg
         params = {"objective": _softmax_floored, "num_class": c.n_classes, "metric": "None",
                   "num_threads": c.n_jobs, "seed": c.seed, "verbose": -1, **params}
-        if allowed is not None:
-            weights = np.zeros(X.shape[1])
-            weights[allowed] = 1
+        if allowed is not None or scale is not None:
+            weights = np.ones(X.shape[1]) if scale is None else np.asarray(scale, float).copy()
+            if allowed is not None:
+                weights[np.setdiff1d(np.arange(X.shape[1]), allowed)] = 0
             params = {**params, "feature_contri": weights.tolist()}     # multiplies each split's gain, so 0 forbids the feature
         before = self.lgb_.feature_importance("split") if self.lgb_ is not None else np.zeros(X.shape[1], int)
         train = lgb.Dataset(X, y, weight=sw)

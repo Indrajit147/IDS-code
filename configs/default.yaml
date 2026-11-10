@@ -158,6 +158,11 @@ llm:                               # M11; the proposal names the models and 4/8-
   rows_per_client: 500             # uniform sample of CSV test rows per client and evaluation window
   always_on_rows: 50               # E6: the first rows of that sample, sent to the LLM whatever the gate says
 
+policy:                            # M12; the knobs and thresholds are assumptions (README, M12)
+  backend: heuristic               # heuristic (the fixed policy through the LLM path: dev check) | hf (llm.model_id on a GPU)
+  max_retries: 2                   # after the first reply; then the default policy
+  evidence_rows: 5000              # at most, per decision: rows for the error rate and PSI
+  shap_rows: 200                   # per decision: rows for the SHAP drift (new rows against the buffer)
 explain:                           # M10; the proposal fixes none of these (README, M10)
   rows_per_client: 1000            # uniform sample of CSV test rows per client and window
   top_k: 5                         # features kept per row in the local store and the escalation payload
