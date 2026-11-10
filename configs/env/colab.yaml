@@ -1,0 +1,11 @@
+# Google Colab: ~12.7 GB RAM (free tier), optional T4 GPU. The Colab notebooks copy the M1 processed/
+# folder from Google Drive to /content/data/processed, because reading Parquet through Drive is slow.
+paths:
+  data_root: /content/data
+  processed: processed
+  splits: /content/splits
+  results_root: /content/results/runs
+resources:
+  n_jobs: -1
+  use_dev_sample: false
+  device: cuda
