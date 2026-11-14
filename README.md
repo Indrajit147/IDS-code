@@ -73,7 +73,7 @@ Rules:
 | M9  | Drift-triggered updates, feature selection, adaptive threshold | E4, Methodology Step 5 | ✅ Done (dev + full, two seeds); `e4_added` carried forward (D11) | — |
 | M10 | SHAP explainability (local + global store)         | Novelty claim C               | ✅ Done (dev one seed, full pool two seeds) | 2026-11-08 |
 | M11 | Cloud LLM verifier (gated, JSON-constrained)       | E5, E6, novelty claim A       | ✅ Full pool: neither verifier helps. Gemma 2 2B (seeds 42, 43) relabels ddos as dos, D3 contains the damage; Mistral 7B (subset) agrees with the edge and fails the JSON contract on 19% | — |
-| M12 | LLM adaptation-policy agent (training decisions)   | "What changes through LLM reasoning" | 🟨 Full pool seed 42 done (Gemma 2 2B delays every update and loses 0.10 window-average macro-F1; the heuristic ties E4); seed 43 pending | — |
+| M12 | LLM adaptation-policy agent (training decisions)   | "What changes through LLM reasoning" | ✅ Full pool, seeds 42 and 43: Gemma 2 2B delays every update and loses 0.10 window-average macro-F1 (0.8245 against E4's 0.9238); the heuristic ties E4 | — |
 | M13 | Federated GBDT baseline (stretch)                  | E7                            | ✅ Done: E7 within 0.008 of E1, 0.044 below E3; uplink 760 to 3,200 times E3's | — |
 | M14 | Full experiment matrix, ablations & sensitivity    | E1–E7, ablations, H1–H4       | ⬜ Not started | — |
 | M15 | Reproducibility package & paper artifacts          | Notebook A/B, IoT-J outline   | ⬜ Not started | — |
@@ -933,7 +933,7 @@ SHAP is computed only for rows sent to the LLM.
 - [x] Policy JSON: `update_urgency`, `training_style`, `preserve_old_behavior`, `feature_focus_groups`, `buffer_selection`, `update_scope`, plus `reasons` (`src/ids/llm/policy.py`)
 - [x] Each field mapped to a training knob, applied deterministically (`scripts/m12_policy.py`)
 - [x] Inputs: drift registry, SHAP drift, per-class metrics; each decision is logged with its evidence (`decisions_<arm>.jsonl`), and every prompt and reply too
-- [ ] Ablation: LLM policy vs a fixed heuristic policy vs no policy, full pool on Kaggle (seeds 42 and 43). Seed 42 done; seed 43 pending
+- [x] Ablation: LLM policy vs a fixed heuristic policy vs no policy, full pool on Kaggle (seeds 42 and 43)
 - **Note:** the main proposal says the LLM is "not used for continuous learning", while the explanation document gives it control over training decisions. The paper must state clearly that the LLM controls the training *policy* only.
 - **Acceptance:** the policy is applied deterministically, and the ablation results are recorded.
 
@@ -1011,7 +1011,29 @@ The multipliers and the four feature groups are my assumptions: the document giv
 - **Gemma's reasons do not match the evidence.** The most common reasons are "No significant feature shift or SHAP drift" (15) and "New rows have low error rate and good F1 score on validation" (11), while a new class is present in 73 decisions. One reason says new classes "are limited" when one is new.
 - **The heuristic ties E4.** The window averages agree to 4 decimals, and per window the differences are at most 0.0025, which is inside the rerun noise above. The heuristic picks high urgency and aggressive training at 80% of decisions and never a full refit. Its lower class forgetting (0.0264 against 0.0286) is one seed.
 - **Class forgetting is lowest for the llm arm (0.0206)** only because the llm arm learned less to begin with. It is not a gain.
-- **Reading, pending seed 43:** with this 2B model, giving the LLM control of training decisions costs 0.10 window-average macro-F1, and a fixed rule set on the same evidence does no better than no policy. This matches M11, where Gemma also collapsed to a near-constant answer. Whether a larger model does better is not tested here.
+- **Reading at seed 42 (seed 43 below repeats it):** with this 2B model, giving the LLM control of training decisions costs 0.10 window-average macro-F1, and a fixed rule set on the same evidence does no better than no policy. This matches M11, where Gemma also collapsed to a near-constant answer. Whether a larger model does better is not tested here.
+
+**Results, full pool, seed 43 (2026-11-14, Kaggle, commit b68f429, clean; CPU at 4 threads, Gemma 2 2B instruct 4-bit on a T4).** [`reports/m12/full/seed43/POLICY.md`](reports/m12/full/seed43/POLICY.md)
+
+| arm | window avg | avg excl. t0 | final | next-window avg | class forgetting |
+|---|---:|---:|---:|---:|---:|
+| none (E4) | 0.9236 | 0.9085 | 0.8895 | 0.6627 | 0.0328 |
+| heuristic | 0.9229 | 0.9076 | 0.8885 | 0.6615 | 0.0321 |
+| llm (Gemma 2 2B) | 0.8271 | 0.7927 | 0.7448 | 0.6051 | 0.0229 |
+
+| arm | t0 | t1 | t2 | t3 | t4 | t5 | clients updated at t1–t5 |
+|---|---:|---:|---:|---:|---:|---:|---|
+| none | 0.9992 | 0.9015 | 0.9197 | 0.9284 | 0.9033 | 0.8895 | 15, 15, 15, 15, 15 |
+| heuristic | 0.9992 | 0.9027 | 0.9170 | 0.9253 | 0.9045 | 0.8885 | 15, 15, 15, 15, 5 |
+| llm | 0.9992 | 0.8847 | 0.6576 | 0.9250 | 0.7512 | 0.7448 | 15, 4, 15, 1, 5 |
+
+- **Check:** the none arm is within 0.0002 macro-F1 of M9's `e4_added` in every window.
+- **Gemma behaves as at seed 42.** All 75 decisions are again urgency low, conservative, buffer preserved, uniform selection and partial scope; 65 of 75 focus on rate_timing and packet_size. Valid after retries at all 75 (0.80 first try), 10.1 s per decision. A new class is present at 74 of 75 decisions. At t2 4 of 15 clients update and at t4 1, and macro-F1 there is 0.66 and 0.75. The reasons again deny the evidence ("No significant feature shift" 13, "Error rate on new rows is low, no significant drift." 12).
+- **The heuristic is again level with E4:** window average 0.0007 below, per window within 0.0031, the same order as rerun noise. Its class forgetting is again a little lower (0.0321 against 0.0328).
+
+**Two seeds (42 and 43), mean window-average macro-F1:** none 0.9238, heuristic 0.9235, llm 0.8245 (each ± at most 0.0026, half the gap between seeds). Final window: 0.8905, 0.8897, 0.7473.
+
+- **Result:** with Gemma 2 2B, LLM control of training decisions costs about 0.10 window-average and 0.14 final-window macro-F1 against E4, in both seeds, because it delays every update. A fixed heuristic on the same evidence neither helps nor hurts. Two seeds with the partition fixed give only a rough spread, and a larger policy model isn't tested.
 
 ### M13: Federated GBDT baseline (stretch)
 **Goal:** E7, a "true" federated boosting reference.
@@ -1107,6 +1129,7 @@ The multipliers and the four feature groups are my assumptions: the document giv
 | 2026-11-10 | M12 🟨 (built) | Design fixed in the README before any result: one policy per client and window at its first update point; six fields mapped to update timing, learning rate and tree budget, buffer weight, feature weights, buffer selection, and refit scope. Arms none, heuristic and llm. Dev check: none matches M9 exactly, and the llm path reproduces the heuristic exactly. `notebooks/m12_kaggle.ipynb` for the full pool with Gemma 2 2B. |
 | 2026-11-10 | M12 🟨 (seed 42) | Full pool, seed 42: none 0.9241 window average (within 0.0011 of M9's E4), heuristic 0.9241, llm (Gemma 2 2B) 0.8218. Gemma chose urgency low at all 75 decisions, so at t2 and t4 only 3 and 2 of 15 clients updated. A first run had failed because the processed dataset wasn't attached; the notebook now checks for it. Seed 43 pending. |
 | 2026-11-10 | M13 🟨 (built) | Design fixed in the README before any result: E7 as horizontal federated XGBoost by histogram aggregation (XGBoost's collective, one worker process per client, relaxed privacy), incremental per window, M6's budgets, global balanced weights. Deviation: histogram aggregation instead of the LSH method of [16]. Protocol test and a 3-client smoke run pass locally; `notebooks/m13_kaggle.ipynb` runs dev and full on a Kaggle CPU session. M12 seed 43 waits for the GPU quota. |
+| 2026-11-14 | M12 ✅ | Full pool, seed 43 on Kaggle at `b68f429`, clean: none 0.9236 (within 0.0002 of M9's E4), heuristic 0.9229, llm 0.8271. Gemma again picks urgency low at all 75 decisions; 4 and 1 of 15 clients update at t2 and t4. Two-seed means: none 0.9238, heuristic 0.9235, llm 0.8245. |
 | 2026-11-10 | M13 ✅ | Full pool, seed 42 on Kaggle CPU (19 min): E7 window average 0.8814, 0.0083 below E1 and 0.044 below E3. The uplink upper bound is 1.0 to 13.9 GB per client per window against E3's 1.3 to 4.3 MB. Dev pool: 0.8811. |
 | 2026-11-08 | M10 ✅ | Full pool, seeds 42 and 43, at `bee20e1`, all runs clean, figures recomputed from the stores. Local TreeSHAP costs about 100 times inference on one thread (36.5 and 40.2 ms per row at t5), so explaining every prediction isn't practical. The SHAP drift signal is above its noise floor at t1, t3 and t5 in both seeds and at the floor at t4. The refit differs from M9's scores by up to 0.0016 from t2 on, the known unexplained rerun drift. The first Kaggle attempt failed on a stale clone; the notebook now stops early on one. |
 | 2026-11-08 | M10 🟨 (dev) | TreeSHAP of `e4_added` (D11) built with XGBoost's and LightGBM's own exact TreeSHAP: local top-5 store, global rankings, SHAP drift signal, cost. The refit matches M9 exactly. Local SHAP costs about 140 times inference at t5 on one thread. The drift signal is small but above its noise floor at every boundary, t1 included. Full pool next. |
