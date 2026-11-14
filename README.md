@@ -1160,6 +1160,10 @@ That is 10 variants. Each needs its own partition (except the three feature vari
 - partition variants: `partition.variant` (own folder under `splits/`), `timeline.split: official` (the official test block starts at CSV row 7,160,831, where the label runs restart; 7,160,831 train rows, matching the cross-check above; profiling rows keep the random split), `dpub.benign_only`;
 - `--tag` for M3 and M4, and M6 and M7 read M4's summary at the same tag when it exists;
 - `src/ids/eval/stats.py`: macro-F1 from counts (checked against scikit-learn), the paired client bootstrap, Holm (`tests/test_m14.py`).
+- Dev check of the ablation passes (seed 42, 4 threads; a pipeline check, not a result): [`reports/m9/dev/ablation/E4.md`](reports/m9/dev/ablation/E4.md). Both run and store per-client counts. Window average: all features 0.9080, no rehearsal 0.9080, against `e4_added` 0.9079; no rehearsal raises class forgetting (0.0439 against 0.0336 for all features).
+- `notebooks/m14_kaggle.ipynb`: one seed per run, part A (M3, M4, M6, M7, M8) then part B (M9 with the ablations, M13), each step in its own process. Part B checks that part A of the same seed is committed.
+
+*Seeds 42 and 43 are rerun (decided 2026-11-15, the user asked for the recommended option),* so that every seed has per-client counts. The reruns replace the published seed 42 and 43 numbers of M3, M4, M6, M7, M8, M9 and M13; each changed number is listed against the old one when the results come back. M11's seed 42 and 43 counts come from its stored rows; M10 and M12 aren't rerun.
 
 *Decided 2026-11-15 (the user asked for the recommended options):* (a) all three tiers as scoped, tier 2 last; (b) H4 (c) is dropped, so H4 is tested on (a) groundedness and (b) the schema-valid rate only, and the paper says the rubric wasn't fixed before M11's outputs were read; (c) M12 gets seed 44 only if GPU quota is left after M11 seed 44.
 
