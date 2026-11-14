@@ -61,6 +61,7 @@ def main() -> None:
     ap.add_argument("--target", default=None)
     ap.add_argument("--timeline", default=None)
     ap.add_argument("--set", nargs="*", default=[], metavar="KEY=VALUE")
+    ap.add_argument("--tag", default=None, help="write to reports/m3/<pool>/<tag> (another seed, or an M14 variant)")
     args = ap.parse_args()
     cfg = load_config(env=args.env, overrides=args.set)
     set_global_seed(cfg["seed"])
@@ -110,7 +111,7 @@ def main() -> None:
         allres.to_json(run.path("results.jsonl"), orient="records", lines=True)
         run.save_json("latency.json", lat)
 
-        rep = REPO_ROOT / "reports" / "m3" / pool
+        rep = REPO_ROOT / "reports" / "m3" / pool / (args.tag or "")
         rep.mkdir(parents=True, exist_ok=True)
         last = len(windows) - 1
         fig_matrix(evaluator.matrix("wifi"), windows, rep / "macro_f1_matrix.png",

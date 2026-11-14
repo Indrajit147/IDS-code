@@ -117,6 +117,10 @@ def test_evaluator_records_slices_alias_and_tables():
     assert {"model", "slice", "macro_f1", "macro_auc_ovr"} <= set(ev.long_table().columns)
     assert set(ev.per_class_table()["class"]) <= set(NAMES)
     assert ev.confusion_table()["n"].gt(0).all()
+    # M14: per-client counts on CSV rows (current and next window, every window for t0); they add up to the csv_only slice
+    per = {k: v for k, v in ev.confusions.items() if k[3].startswith("csv_client:")}
+    assert {k[:3] for k in per} == {("m", 0, 0), ("m", 0, 1), ("m", 1, 1), ("static", 0, 0), ("static", 0, 1)}
+    assert (ev.confusions[("m", 0, 0, "csv_client:0")] + ev.confusions[("m", 0, 0, "csv_client:1")] == ev.confusions[("m", 0, 0, "csv_only")]).all()
 
 
 def test_slices_absent_without_source_or_clusters():

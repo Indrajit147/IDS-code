@@ -56,6 +56,8 @@ def select_dpub(y19: np.ndarray, cfg_dpub: dict, seed: int) -> np.ndarray:
     target[ATTACKS19.index("Benign")] = cfg_dpub["benign"]
     target = np.where(sizes > 0, np.maximum(target, cfg_dpub["min_per_class"]), 0)
     target = np.minimum(target, np.floor(sizes * cfg_dpub["max_class_frac"]).astype(np.int64))
+    if cfg_dpub.get("benign_only"):     # D2's ablation (M14)
+        target[np.arange(len(target)) != ATTACKS19.index("Benign")] = 0
     picks = [rng(seed, "dpub", c).choice(np.flatnonzero(y19 == c), target[c], replace=False)
              for c in range(len(ATTACKS19)) if target[c] > 0]
     return np.sort(np.concatenate(picks))
@@ -120,7 +122,10 @@ def build_partition(cfg: dict, timeline: str, csv_rows: pd.DataFrame,
         active = range(intro[c], W)
         for w, chunk in zip(active, np.array_split(cid, len(active))):
             shares = drifted_sh if w >= w_drift else base
-            test = train_test_mask(rng(seed, "tt", c, w), len(chunk), tl["test_frac"])
+            if tl.get("split", "random") == "official":    # M14 sensitivity: the CSV's own train block, then its test block
+                test = chunk >= tl["official_test_from"]
+            else:
+                test = train_test_mask(rng(seed, "tt", c, w), len(chunk), tl["test_frac"])
             for split, sel in ((TRAIN, ~test), (TEST, test)):
                 part = chunk[sel]
                 emit(SRC_CSV, part, w, allocate(part, shares, ("alloc", c, w, split)), split, c)

@@ -198,7 +198,8 @@ def main() -> None:
         all_rows = [ev.summary(m, "all", eps=ec["recover_eps"]) for m in order]
 
         refs = []
-        m4 = REPO_ROOT / "reports" / "m4" / pool / "summary.json"
+        m4 = REPO_ROOT / "reports" / "m4" / pool / (args.tag or "") / "summary.json"
+        m4 = m4 if m4.exists() else REPO_ROOT / "reports" / "m4" / pool / "summary.json"
         if m4.exists():
             refs = [s for s in json.loads(m4.read_text(encoding="utf-8"))["summaries"] if s["slice"] == HEADLINE]
             for s in refs:

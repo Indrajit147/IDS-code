@@ -145,3 +145,11 @@ def test_allowed_holds_at_small_k(n_allowed):
     e = _edge(2)
     e.update(X[:2500], y[:2500], X[2500:], y[2500:], allowed=np.arange(n_allowed))
     assert {int(f[1:]) for f in e.xgb_.get_score(importance_type="weight")} <= set(range(n_allowed))
+
+
+def test_a_zero_capacity_buffer_stays_empty():
+    """M14's no-rehearsal ablation: a buffer of 0 rows never hands rows to an update."""
+    from ids.fl.rehearsal import RehearsalBuffer
+    b = RehearsalBuffer(0, np.random.default_rng(0))
+    b.add(np.ones((50, 3), np.float32), np.repeat([0, 1], 25))
+    assert len(b) == 0

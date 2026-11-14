@@ -32,6 +32,8 @@ timeline:                          # M2 (headline regime D4)
   headline: category_intro
   build: [category_intro, alt_order]   # timelines materialized by m2_build_partitions.py
   test_frac: 0.2                   # per (window, class): held-out client-local test share
+  split: random                    # M14 sensitivity: official = the CSV's own train/test blocks (profiling rows stay random)
+  official_test_from: 7160831      # first CSV row of the official test block (label runs restart here; README, dataset)
   dedup: true                      # drop exact duplicate feature rows (keep first) before splitting
   # Window in which each attack19 class is INTRODUCED (glob patterns). A class
   # then recurs with fresh rows in every later window (cumulative stream).
@@ -51,6 +53,9 @@ timeline:                          # M2 (headline regime D4)
       t4: ["Recon-*"]
       t5: []
 
+partition:                         # M14: a sensitivity variant's name; its partition goes to splits/<pool>/<timeline>/<variant>
+  variant: null
+
 federation:                        # M2/M7
   n_clients: 15
   dirichlet_alpha: 0.5             # label skew; smaller = more non-IID
@@ -69,6 +74,7 @@ dpub:                              # D2: public calibration set for DA-FedDistil
   min_per_class: 50
   max_class_frac: 0.05             # never take more than 5% of a class
   window_mode: cumulative          # at window t use only classes introduced <= t
+  benign_only: false               # D2's ablation (M14): the benign rows only
 
 ble:                               # separate sub-federation (different feature space)
   n_clients: 3

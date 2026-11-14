@@ -128,3 +128,23 @@ def test_deterministic_and_ble(built):
     counts, cstats = partition_stats(part)
     assert counts["n"].sum() == len(part.assignments)
     assert cstats["jsd_attack19_vs_window"].between(0, 1).all()
+
+
+def test_m14_benign_only_dpub_and_official_split():
+    y = np.array([0] * 1000 + [1] * 100000 + [5] * 40)
+    cfg_d = {"benign": 500, "attack_frac": 0.01, "min_per_class": 50, "max_class_frac": 0.05, "benign_only": True}
+    assert set(y[select_dpub(y, cfg_d, seed=0)]) == {0}
+    csv, prof, ble = _toy()
+    cut = len(csv) // 2
+    cfg = load_config(env="local", overrides={"federation": {"n_clients": 5}, "dpub": {"benign": 40, "attack_frac": 0.1},
+                                              "timeline": {"split": "official", "official_test_from": cut}})
+    a = build_partition(cfg, "category_intro", csv, prof, ble, "toy").assignments
+    c = a[a.source == SRC_CSV]
+    assert ((c.split == TEST) == (c.row_id >= cut)).all()
+
+
+def test_partition_variant_gets_its_own_folder():
+    from ids.partition.io import partition_dir
+    cfg = load_config(env="local")
+    base = partition_dir(cfg, "dev", "category_intro")
+    assert partition_dir({**cfg, "partition": {"variant": "clients10"}}, "dev", "category_intro") == base / "clients10"

@@ -123,6 +123,11 @@ class Evaluator:
                 if mask.any():
                     self._record(method, train_through, w, primary, name, ts.y[mask], p[mask])
                     self.confusions[(method, train_through, w, name)] = confusion(ts.y[mask], p[mask], len(self.names))
+            if w in (train_through, train_through + 1) or train_through == 0:   # M14's client bootstrap; counts only: current and next window, every window for t0 (static)
+                csv = np.ones(len(ts.y), bool) if ts.source is None else ts.source == SRC_CSV
+                for c in np.unique(ts.client[csv]):
+                    m = csv & (ts.client == c)
+                    self.confusions[(method, train_through, w, f"csv_client:{int(c)}")] = confusion(ts.y[m], p[m], len(self.names))
 
     def alias(self, new_method: str, method: str, train_through: int) -> None:
         """Register one trained state of a method under a second name, without re-predicting."""

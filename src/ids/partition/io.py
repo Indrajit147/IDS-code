@@ -18,7 +18,10 @@ SPLIT_CODE = {"train": TRAIN, "test": TEST}
 
 
 def partition_dir(cfg: dict, pool: str, timeline: str) -> Path:
-    return data_path(cfg, "splits") / pool / timeline
+    """partition.variant (M14 sensitivity runs) gets its own folder; without one, the headline partition's path."""
+    d = data_path(cfg, "splits") / pool / timeline
+    v = (cfg.get("partition") or {}).get("variant")
+    return d / v if v else d
 
 
 def save_partition(part: Partition, out: Path) -> None:

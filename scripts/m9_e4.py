@@ -10,7 +10,11 @@ Passes: fixed (reproduces E3), fixed_k<K> (the K sweep), e4_schedule (all featur
 disagreement), e4 (trigger + the K with the best validation score), e4_added (e4, but every client also updates at
 the end of every window: the trigger adds to the fixed schedule instead of replacing it).
 
-Usage: python scripts/m9_e4.py [--pool dev|full] [--env ...] [--tag seed43] [--resume] [--only NAME] [--report]
+--ablation runs M14's ablations of e4_added instead, into reports/m9/<pool>/<tag>/ablation/: e4_added_allfeat (all
+features, no top-K) and e4_added_noreh (rehearsal buffer of 0 rows). K comes from the sweep's checkpoints if there are
+any, else from this seed's M9 summary.json.
+
+Usage: python scripts/m9_e4.py [--pool dev|full] [--env ...] [--tag seed43] [--resume] [--only NAME] [--report] [--ablation]
 """
 from __future__ import annotations
 
@@ -50,6 +54,7 @@ from ids.utils.seed import derive_seed   # noqa: E402
 
 HEADLINE = "csv_only"    # D7
 GATE_PASSES = ("fixed", "e4_schedule", "e4_label_free", "e4", "e4_added")
+ABLATIONS = ("e4_added_allfeat", "e4_added_noreh")    # M14; no gate, only the scores are compared
 
 
 def pass_names(cfg: dict) -> list[str]:
@@ -214,9 +219,11 @@ def client_streams(cfg, models, ids, rows_pre, rows_post, carry, key) -> dict:
 def run_pass(cfg, name, window_rows, X_pub, y_pub, intro, ev, log, k=None, save=None, hook=None, clients=None) -> dict:
     """save: a folder for each window's client models (M10 explains them); hook: called with the gate's inputs (M11).
     Neither changes any result. clients: a ready StreamClients subclass (M12's policy clients); its trigger is used."""
-    sc, trigger = cfg["schedule"], {"e4": "error", "e4_added": "error", "e4_schedule": "error", "e4_label_free": "disagreement"}.get(name)
+    sc, trigger = cfg["schedule"], {"e4": "error", "e4_added": "error", "e4_schedule": "error", "e4_label_free": "disagreement", **dict.fromkeys(ABLATIONS, "error")}.get(name)
+    if name == "e4_added_noreh":
+        cfg = {**cfg, "incremental": {**cfg["incremental"], "rehearsal_capacity": 0}}
     if clients is None:
-        clients = StreamClients(cfg, window_rows, k=k, trigger=trigger, end_all=name == "e4_added")
+        clients = StreamClients(cfg, window_rows, k=k, trigger=trigger, end_all=name in ("e4_added", *ABLATIONS))
     trigger = clients.trigger
     out = {"comm": [], "gate": [], "gate_val": [], "curves": [], "fit": [], "val": [], "k": k}
     tests = ev.test_sets
@@ -360,7 +367,7 @@ def gate_on_test(cfg, clients, t, tau, predict, memo, tests, carry, out, hook=No
     return new_carry
 
 
-LABELS = {"fixed": "Fixed schedule, all features (reproduces E3)", "e4": "E4: ADWIN trigger + top-K", "e4_added": "ADWIN trigger added to the fixed schedule, top-K", "e4_schedule": "ADWIN trigger, all features", "e4_label_free": "Trigger on disagreement, all features"}
+LABELS = {"e4_added_allfeat": "E4 (e4_added), all features", "e4_added_noreh": "E4 (e4_added), no rehearsal", "fixed": "Fixed schedule, all features (reproduces E3)", "e4": "E4: ADWIN trigger + top-K", "e4_added": "ADWIN trigger added to the fixed schedule, top-K", "e4_schedule": "ADWIN trigger, all features", "e4_label_free": "Trigger on disagreement, all features"}
 
 
 def label(m: str) -> str:
@@ -392,7 +399,7 @@ def write_report(rep, x) -> None:
     for k, v in x["k_table"]:
         t4 += f"| {k} | {v['val']:.4f} | {v['avg']:.4f} | {v['t5']:.4f} | {'yes' if k == x['k'] else ''} |\n"
     t5 = "| method | model through | eval window | error rate | mode | strength | escalated | errors caught | fixed gate at the same cost | accuracy on the rest |\n|---|---|---|---:|---|---:|---:|---:|---:|---:|\n"
-    for r in x["gate"][x["gate"].method.isin(["fixed", "e4"])].itertuples():
+    for r in (x["gate"][x["gate"].method.isin(["fixed", "e4"])] if len(x["gate"]) else x["gate"]).itertuples():
         same = "" if pd.isna(r.fixed_same_cost_capture) else f"{r.fixed_same_cost_capture:.3f}"
         kept = "n/a" if pd.isna(r.accuracy_not_escalated) else f"{r.accuracy_not_escalated:.3f}"
         caught = "n/a" if pd.isna(r.error_capture) else f"{r.error_capture:.3f}"
@@ -445,13 +452,14 @@ def main() -> None:
     ap.add_argument("--tag", default=None)
     ap.add_argument("--only", default=None)
     ap.add_argument("--report", action="store_true")
+    ap.add_argument("--ablation", action="store_true")
     args = ap.parse_args()
     cfg = load_config(env=args.env, overrides=args.set)
     set_global_seed(cfg["seed"])
     pool = args.pool or ("dev" if cfg["resources"]["use_dev_sample"] else "full")
     tl, windows, feats = cfg["timeline"]["headline"], cfg["timeline"]["windows"], model_features(cfg)
     target, ec, sc = cfg["labels"]["headline_target"], cfg["eval"], cfg["schedule"]
-    names = pass_names(cfg)
+    names = list(ABLATIONS) if args.ablation else pass_names(cfg)
     if args.only and args.only not in names:
         raise SystemExit(f"--only takes one of {names}")
 
@@ -472,6 +480,9 @@ def main() -> None:
             log.info("rows loaded: %s", memory_note())
 
         rep = REPO_ROOT / "reports" / "m9" / pool / (args.tag or "")
+        m9_summary = rep / "summary.json"
+        if args.ablation:
+            rep, sweep = rep / "ablation", rep / "checkpoints"
         ckpt = rep / "checkpoints"
         ckpt.mkdir(parents=True, exist_ok=True)
         key = {"seed": cfg["seed"], "n_jobs": cfg["resources"]["n_jobs"], "models": cfg["models"], "incremental": cfg["incremental"], "distill": cfg["distill"],
@@ -499,12 +510,25 @@ def main() -> None:
             k = None
             if name.startswith("fixed_k"):
                 k = int(name.removeprefix("fixed_k"))
-            elif name in ("e4", "e4_added"):
+            elif name in ("e4", "e4_added", "e4_added_noreh"):
                 val = {int(n.removeprefix("fixed_k")): float(np.mean(r["val"])) for n, r in results.items() if n.startswith("fixed_k")}
-                if len(val) != len(sc["k_sweep"]):
-                    raise SystemExit(f"{name} needs the whole K sweep first; found K = {sorted(val)}")
-                k = pick_k(val)
-                log.info("[%s] K = %d from %s", name, k, val)
+                if args.ablation:
+                    val = {}
+                    for kk in sc["k_sweep"]:
+                        g = sweep / f"fixed_k{kk}.pkl"
+                        saved = pickle.loads(g.read_bytes()) if g.exists() else None
+                        if saved and saved["key"] == key:
+                            val[kk] = float(np.mean(saved["out"]["val"]))
+                if args.ablation and len(val) != len(sc["k_sweep"]):   # the sweep's checkpoints are deleted once M9's report is written
+                    if not m9_summary.exists():
+                        raise SystemExit(f"{name} needs M9's K: run M9 first ({m9_summary} or its sweep checkpoints)")
+                    k = json.loads(m9_summary.read_text(encoding="utf-8"))["k"]
+                    log.info("[%s] K = %d from %s", name, k, m9_summary)
+                else:
+                    if len(val) != len(sc["k_sweep"]):
+                        raise SystemExit(f"{name} needs the whole K sweep first; found K = {sorted(val)}")
+                    k = pick_k(val)
+                    log.info("[%s] K = %d from %s", name, k, val)
             have = {r["model"] for r in ev.records}
             results[name] = run_pass(cfg, name, window_rows, X_pub, y_pub, intro, ev, log, k=k)
             f.write_bytes(pickle.dumps({"key": key, "out": results[name], "records": [r for r in ev.records if r["model"] not in have],

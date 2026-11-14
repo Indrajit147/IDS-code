@@ -1152,6 +1152,15 @@ That is 10 variants. Each needs its own partition (except the three feature vari
 
 *Order:* (1) code: variant key, the two new M9 passes, `m14_report.py`, each checked on dev; (2) M11 seed 44 on GPU; (3) tier 1 CPU runs; (4) tier 3; (5) report with statistics; (6) tier 2.
 
+*Found while building (2026-11-15): the stored outputs can't feed the client bootstrap.* Every milestone's `confusions.csv` is pooled over clients (slices `all`, `csv_only` and the 3 clusters), so per-client counts don't exist for seeds 42 and 43. The evaluator now also stores per-client counts on CSV rows (current and next window, and every window for the t0 model, which static needs), so every new run has them. M11 is the exception: its scores come from the stored per-row sample (`verified.parquet`), so its per-client counts can be rebuilt for seeds 42 and 43 without the GPU. How to get them for the other milestones at seeds 42 and 43 is the user's call (below).
+
+*Built so far:*
+- per-client counts in the evaluator (`src/ids/eval/harness.py`);
+- `scripts/m9_e4.py --ablation`: passes `e4_added_allfeat` and `e4_added_noreh`, into `reports/m9/<pool>/<tag>/ablation/`, K from the sweep's checkpoints or else M9's `summary.json` (30 for dev and both full-pool seeds);
+- partition variants: `partition.variant` (own folder under `splits/`), `timeline.split: official` (the official test block starts at CSV row 7,160,831, where the label runs restart; 7,160,831 train rows, matching the cross-check above; profiling rows keep the random split), `dpub.benign_only`;
+- `--tag` for M3 and M4, and M6 and M7 read M4's summary at the same tag when it exists;
+- `src/ids/eval/stats.py`: macro-F1 from counts (checked against scikit-learn), the paired client bootstrap, Holm (`tests/test_m14.py`).
+
 *Decided 2026-11-15 (the user asked for the recommended options):* (a) all three tiers as scoped, tier 2 last; (b) H4 (c) is dropped, so H4 is tested on (a) groundedness and (b) the schema-valid rate only, and the paper says the rubric wasn't fixed before M11's outputs were read; (c) M12 gets seed 44 only if GPU quota is left after M11 seed 44.
 
 ### M15: Reproducibility package & paper artifacts

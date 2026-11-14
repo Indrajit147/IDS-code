@@ -133,6 +133,7 @@ def main() -> None:
     ap.add_argument("--pool", default=None, help="dev | full (default from resources.use_dev_sample)")
     ap.add_argument("--run", default=None, help="M3 run directory (default: latest for the pool)")
     ap.add_argument("--set", nargs="*", default=[], metavar="KEY=VALUE")
+    ap.add_argument("--tag", default=None, help="write to reports/m4/<pool>/<tag>; pass --run for the matching M3 run")
     args = ap.parse_args()
     cfg = load_config(env=args.env, overrides=args.set)
     set_global_seed(cfg["seed"])
@@ -186,7 +187,7 @@ def main() -> None:
         n_clients = cfg["federation"]["n_clients"]
         fl_round = {"n_dpub": n_dpub, **fl_round_bytes(n_dpub, len(names), n_clients)}
 
-        rep = REPO_ROOT / "reports" / "m4" / pool
+        rep = REPO_ROOT / "reports" / "m4" / pool / (args.tag or "")
         rep.mkdir(parents=True, exist_ok=True)
         ev.long_table().to_csv(rep / "results.csv", index=False)
         ev.per_class_table().to_csv(rep / "per_class.csv", index=False)
