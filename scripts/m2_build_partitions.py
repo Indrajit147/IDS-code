@@ -221,7 +221,9 @@ def main() -> None:
                 log.info("[%s] assigned=%s dpub=%s jsd=%s (%.0fs)", key, summary[key]["n_assigned"],
                          summary[key]["n_dpub"], summary[key]["jsd_mean_by_window"], time.time() - t0)
                 if tl == cfg["timeline"]["headline"]:
-                    rep = REPO_ROOT / "reports" / "m2" / pool
+                    # a variant (M14) reports into its own folder, so the headline report is never overwritten
+                    rep = REPO_ROOT / "reports" / "m2" / pool / ((cfg.get("partition") or {}).get("variant") or "")
+                    rep.mkdir(parents=True, exist_ok=True)
                     write_report(cfg, part, counts, cstats, bcounts, rep)
                     (rep / "client_partitions.json").write_text(dumps(part.meta, indent=2), encoding="utf-8")
                     (rep / "window_definition.json").write_text(dumps(part.definition, indent=2), encoding="utf-8")
