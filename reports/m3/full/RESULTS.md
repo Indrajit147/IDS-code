@@ -1,6 +1,6 @@
 # M3 results — edge ensemble baselines (`full` pool)
 
-Run `20261104-154549_m3_baselines_full`; target `y_category` (6 classes); timeline `category_intro`; 43 features (D6: IAT excluded).
+Run `20261114-192205_m3_baselines_full`; target `y_category` (6 classes); timeline `category_intro`; 43 features (D6: IAT excluded).
 Model: XGBoost + LightGBM with balanced class weights (capped at 50), early stopping on a 10% stratified validation split, fusion weight chosen by validation log-loss, temperature-calibrated.
 
 ## E1 centralized vs static, on each window's own test set
@@ -8,7 +8,7 @@ Model: XGBoost + LightGBM with balanced class weights (capped at 50), early stop
 | window | new classes | E1 centralized macro-F1 | E1 accuracy | static macro-F1 | static accuracy | E1 n_train | w_xgb | T |
 |---|---|---:|---:|---:|---:|---:|---:|---:|
 | t0 | Benign, DoS-* | 0.9999 | 0.9999 | 0.9999 | 0.9999 | 332,955 | 0.9 | 0.90 |
-| t1 | DDoS-* | 0.8311 | 0.8053 | 0.4626 | 0.2854 | 1,499,308 | 0.4 | 0.87 |
+| t1 | DDoS-* | 0.8311 | 0.8052 | 0.4626 | 0.2854 | 1,499,308 | 0.4 | 0.87 |
 | t2 | Recon-Port-Scan, Recon-Ping-Sweep | 0.8683 | 0.8040 | 0.3369 | 0.2811 | 2,683,809 | 0.9 | 0.83 |
 | t3 | MQTT-* | 0.8948 | 0.8186 | 0.2631 | 0.2638 | 3,945,919 | 0.3 | 0.83 |
 | t4 | ARP-Spoofing | 0.8827 | 0.8147 | 0.2127 | 0.2625 | 5,214,366 | 0.9 | 0.82 |
@@ -30,8 +30,8 @@ Each matrix row is one model (trained through window t) and each column is a win
 | variant | mean macro-F1 | mean accuracy | mean ECE |
 |---|---:|---:|---:|
 | xgb | 0.8910 | 0.8429 | 0.0245 |
-| lgb | 0.8906 | 0.8422 | 0.0226 |
-| fused | 0.8915 | 0.8433 | 0.0239 |
+| lgb | 0.8906 | 0.8422 | 0.0225 |
+| fused | 0.8915 | 0.8433 | 0.0238 |
 | calibrated | 0.8915 | 0.8433 | 0.0172 |
 
 ## Per-class F1 of E1 on each window (— = class not yet present)
@@ -51,8 +51,8 @@ Each matrix row is one model (trained through window t) and each column is a win
 
 | model | single-flow P50 (ms) | P95 (ms) | batched (µs/flow) | XGB size (KB) | LGBM size (KB) |
 |---|---:|---:|---:|---:|---:|
-| trained through t0 | 5.99 | 9.49 | 3.26 | 212 | 619 |
-| trained through t5 | 6.01 | 8.65 | 74.03 | 27,352 | 9,165 |
+| trained through t0 | 5.99 | 11.54 | 6.35 | 212 | 619 |
+| trained through t5 | 6.04 | 11.72 | 130.24 | 27,352 | 9,165 |
 
 Measured on a machine with 4 logical CPUs, using all of them, with the full fused + calibrated ensemble. Single-flow latency includes Python call overhead.
 
