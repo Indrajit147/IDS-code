@@ -64,6 +64,13 @@ D_pub benign-only moves attack rows from D_pub back to the clients, so its rows 
 
 Observed, seed-averaged: variance over t1-t5 E3 0.00018, E4 0.00022; mean time-to-recover E3 2.40, E4 2.40 windows (a drop that never recovers counts as one window past t5).
 
-Tier 3 (τc/τd frontier, H4): `TIER3.md`, written by the same command. Sensitivity variants (tier 2): not yet run.
+## Sensitivity (tier 2, seed 42; one run per variant, so the intervals are client intervals only)
+
+| variant | clients | E1 | local + rehearsal | E3 | E4 | E3 − local (95% interval) | E4 − E3 (95% interval) |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| headline (seed 42) | 15 | 0.8897 | 0.9209 | 0.9258 | 0.9243 | | |
+| (no variant back yet) | | | | | | | |
+
+Tier 3 (τc/τd frontier, H4): `TIER3.md`, written by the same command.
 
 ![per window](macro_f1_by_window.png)

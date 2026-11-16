@@ -1252,7 +1252,41 @@ Tier 1 is complete.
 - **Policy reasons (weak check only).** Explicit contradictions of two yes/no facts (new classes, ADWIN fired): 0 of 212 and 1 of 210 reasons, a lower bound. But Gemma chose urgency low in every decision where a new class was present (73 / 73 and 74 / 74), so its decisions ignore the evidence its reasons cite.
 - **Not done: M12 seed 44.** It needs Kaggle GPU quota and isn't needed for E1–E7.
 
-Left in M14: tier 2 (ten sensitivity variants, Kaggle CPU).
+*Tier 2, built (2026-11-16):*
+- **The steps.** `scripts/m14_variant.py` holds every variant's overrides and its list of steps. Both `notebooks/m14_variant_kaggle.ipynb` and the local dev check run that list.
+  - Per variant at seed 42: the partition (M2), E1 (M3 + M4), E3 with local + rehearsal (M7, whose local pass is exactly M6's), M9's K sweep and `e4_added`.
+  - Reports go to `reports/mX/full/<variant>/seed42/`.
+  - Variants and their overrides:
+
+    | variant | overrides |
+    |---|---|
+    | `clients10`, `clients20` | `federation.n_clients` |
+    | `alpha0.1`, `alpha1.0` | `federation.dirichlet_alpha` |
+    | `alt_order` | `timeline.headline` |
+    | `reseed` | the partition drawn at seed 7 |
+    | `with_iat` | `features.exclude_wifi=[]` |
+    | `no_number_weight` | `features.exclude_wifi=[IAT,Number,Weight]` |
+    | `no_profiling` | `profiling.use=false` |
+    | `official_split` | `timeline.split=official` |
+
+  - The four variants that don't change the partition (`alt_order` and the two feature variants among them) rebuild the headline partition, which M2's dedup makes independent of the feature list, and restore the headline M2 figures.
+- **The report.** `m14_report.py` adds a sensitivity table for every variant that has come back: E1, local, E3 and E4, with client intervals for E3 − local and E4 − E3. The client count comes from the data, so the 10- and 20-client variants work.
+- **Dev checks (seed 42, 4 threads; pipeline checks, not results).**
+  - `with_iat`: every step exits 0, the rebuilt headline dev partition is byte-identical, and the headline M2 report is restored.
+  - Dev E1 goes from 0.8844 to 0.9891 with IAT, the D6 shortcut again. On dev, E3 is then 0.0022 *below* local-only (interval −0.0042 to −0.0009).
+  - **Checkpoint 2026-11-16.** Five of the ten dev chains pass with every step at exit 0: `with_iat`, `no_number_weight`, `alt_order`, `clients10`, `clients20`. The 10- and 20-client runs store 10 and 20 clients' counts.
+  - Dev window average (pipeline check, not a result):
+
+    | variant | E1 | local | E3 | E4 | E3 − local |
+    |---|---:|---:|---:|---:|---:|
+    | `clients10` | 0.8841 | 0.9171 | 0.9181 | 0.9141 | +0.0010 |
+    | `clients20` | 0.8841 | 0.9099 | 0.9077 | 0.9044 | −0.0022 |
+    | `alt_order` | 0.9164 | 0.9339 | 0.9286 | 0.9230 | −0.0054 |
+    | `with_iat` | 0.9891 | 0.9874 | 0.9852 | 0.9836 | −0.0022 |
+    | `no_number_weight` | 0.8833 | 0.9109 | 0.9114 | 0.9083 | +0.0006 |
+
+  - **Not yet checked on dev:** `alpha0.1` (stopped mid-run at the user's request; its partial outputs aren't committed), `alpha1.0`, `reseed`, `no_profiling`, `official_split`. To resume, run `python scripts/m14_variant.py --variant <name> --pool dev` for each, then the Kaggle runs.
+- **Full pool.** One Kaggle CPU run per variant, about 5–6 h each (estimated, not measured).
 
 *Decided 2026-11-15 (the user asked for the recommended options):* (a) all three tiers as scoped, tier 2 last; (b) H4 (c) is dropped, so H4 is tested on (a) groundedness and (b) the schema-valid rate only, and the paper says the rubric wasn't fixed before M11's outputs were read; (c) M12 gets seed 44 only if GPU quota is left after M11 seed 44.
 

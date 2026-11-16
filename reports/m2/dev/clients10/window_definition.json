@@ -1,0 +1,157 @@
+{
+  "timeline": "category_intro",
+  "windows": [
+    "t0",
+    "t1",
+    "t2",
+    "t3",
+    "t4",
+    "t5"
+  ],
+  "intro_window": {
+    "Benign": 0,
+    "DoS-ICMP": 0,
+    "DoS-SYN": 0,
+    "DoS-TCP": 0,
+    "DoS-UDP": 0,
+    "DDoS-ICMP": 1,
+    "DDoS-SYN": 1,
+    "DDoS-TCP": 1,
+    "DDoS-UDP": 1,
+    "Recon-Port-Scan": 2,
+    "Recon-Ping-Sweep": 2,
+    "MQTT-DDoS-Connect-Flood": 3,
+    "MQTT-DDoS-Publish-Flood": 3,
+    "MQTT-DoS-Connect-Flood": 3,
+    "MQTT-DoS-Publish-Flood": 3,
+    "MQTT-Malformed-Data": 3,
+    "ARP-Spoofing": 4,
+    "Recon-OS-Scan": 5,
+    "Recon-VulScan": 5
+  },
+  "classes_by_window": {
+    "t0": [
+      "Benign",
+      "DoS-ICMP",
+      "DoS-SYN",
+      "DoS-TCP",
+      "DoS-UDP"
+    ],
+    "t1": [
+      "Benign",
+      "DDoS-ICMP",
+      "DDoS-SYN",
+      "DDoS-TCP",
+      "DDoS-UDP",
+      "DoS-ICMP",
+      "DoS-SYN",
+      "DoS-TCP",
+      "DoS-UDP"
+    ],
+    "t2": [
+      "Benign",
+      "DDoS-ICMP",
+      "DDoS-SYN",
+      "DDoS-TCP",
+      "DDoS-UDP",
+      "DoS-ICMP",
+      "DoS-SYN",
+      "DoS-TCP",
+      "DoS-UDP",
+      "Recon-Ping-Sweep",
+      "Recon-Port-Scan"
+    ],
+    "t3": [
+      "Benign",
+      "DDoS-ICMP",
+      "DDoS-SYN",
+      "DDoS-TCP",
+      "DDoS-UDP",
+      "DoS-ICMP",
+      "DoS-SYN",
+      "DoS-TCP",
+      "DoS-UDP",
+      "Recon-Ping-Sweep",
+      "Recon-Port-Scan",
+      "MQTT-DDoS-Connect-Flood",
+      "MQTT-DDoS-Publish-Flood",
+      "MQTT-DoS-Connect-Flood",
+      "MQTT-DoS-Publish-Flood",
+      "MQTT-Malformed-Data"
+    ],
+    "t4": [
+      "Benign",
+      "DDoS-ICMP",
+      "DDoS-SYN",
+      "DDoS-TCP",
+      "DDoS-UDP",
+      "DoS-ICMP",
+      "DoS-SYN",
+      "DoS-TCP",
+      "DoS-UDP",
+      "Recon-Ping-Sweep",
+      "Recon-Port-Scan",
+      "MQTT-DDoS-Connect-Flood",
+      "MQTT-DDoS-Publish-Flood",
+      "MQTT-DoS-Connect-Flood",
+      "MQTT-DoS-Publish-Flood",
+      "MQTT-Malformed-Data",
+      "ARP-Spoofing"
+    ],
+    "t5": [
+      "Benign",
+      "DDoS-ICMP",
+      "DDoS-SYN",
+      "DDoS-TCP",
+      "DDoS-UDP",
+      "DoS-ICMP",
+      "DoS-SYN",
+      "DoS-TCP",
+      "DoS-UDP",
+      "Recon-OS-Scan",
+      "Recon-Ping-Sweep",
+      "Recon-Port-Scan",
+      "Recon-VulScan",
+      "MQTT-DDoS-Connect-Flood",
+      "MQTT-DDoS-Publish-Flood",
+      "MQTT-DoS-Connect-Flood",
+      "MQTT-DoS-Publish-Flood",
+      "MQTT-Malformed-Data",
+      "ARP-Spoofing"
+    ]
+  },
+  "new_classes_by_window": {
+    "t0": [
+      "Benign",
+      "DoS-ICMP",
+      "DoS-SYN",
+      "DoS-TCP",
+      "DoS-UDP"
+    ],
+    "t1": [
+      "DDoS-ICMP",
+      "DDoS-SYN",
+      "DDoS-TCP",
+      "DDoS-UDP"
+    ],
+    "t2": [
+      "Recon-Ping-Sweep",
+      "Recon-Port-Scan"
+    ],
+    "t3": [
+      "MQTT-DDoS-Connect-Flood",
+      "MQTT-DDoS-Publish-Flood",
+      "MQTT-DoS-Connect-Flood",
+      "MQTT-DoS-Publish-Flood",
+      "MQTT-Malformed-Data"
+    ],
+    "t4": [
+      "ARP-Spoofing"
+    ],
+    "t5": [
+      "Recon-OS-Scan",
+      "Recon-VulScan"
+    ]
+  },
+  "semantics": "class rows are split evenly over windows intro..last (cumulative stream)"
+}

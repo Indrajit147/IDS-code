@@ -69,10 +69,12 @@ def _confusions(path: Path) -> pd.DataFrame:
 
 
 def counts(path: Path, method: str, pairs: list[tuple[int, int]], prefix: str = "csv_client") -> np.ndarray:
-    """(P, C, K, K) per-client counts of method on each (train_through, eval_window) pair."""
+    """(P, C, K, K) per-client counts of method on each (train_through, eval_window) pair; C from the file
+    (15 for the headline, 10 or 20 for the client-count variants)."""
     d = _confusions(path)
+    n_clients = int(d["client"].max()) + 1
     d = d[(d["model"] == method) & d["slice"].str.startswith(prefix + ":")]
-    out = np.zeros((len(pairs), C, K, K))
+    out = np.zeros((len(pairs), n_clients, K, K))
     for p, (t, w) in enumerate(pairs):
         sel = d[(d["train_through"] == t) & (d["eval_window"] == w)]
         if sel.empty:
@@ -99,6 +101,35 @@ def stack(name: str) -> dict:
             nxt.append(counts(path, method, [(t, t + 1) for t in range(5)]))
         check_window_average(name, s, path, method, macro_f1_cm(cur[-1].sum(1)).mean())
     return {"cur": np.stack(cur), "next": np.stack(nxt) if nxt else None}
+
+
+def cur_counts(path: Path, method: str, label: str) -> np.ndarray:
+    """(1, P, C, K, K): one run's current-series counts, checked against its stored window average."""
+    c = counts(path, method, current_pairs(path, method))
+    check_window_average(label, 42, path, method, macro_f1_cm(c.sum(1)).mean())
+    return c[None]
+
+
+def sensitivity(n: int, pool: str = "full") -> tuple[pd.DataFrame, list[Path]]:
+    """Tier 2: E1, local + rehearsal, E3 and E4 on each variant that has come back (seed 42), with paired client
+    intervals for E3 - local and E4 - E3 on the variant's own clients."""
+    from m14_variant import TIER2
+    rows, dirs = [], []
+    for v in TIER2:
+        d = {m: REP / m / pool / v / "seed42" for m in ("m4", "m7", "m9")}
+        if not all((x / "confusions.csv").exists() for x in d.values()):
+            continue
+        dirs += list(d.values())
+        e1 = cur_counts(d["m4"] / "confusions.csv", "E1", v)
+        loc = cur_counts(d["m7"] / "confusions.csv", "local_rehearsal", v)
+        e3 = cur_counts(d["m7"] / "confusions.csv", "e3", v)
+        e4 = cur_counts(d["m9"] / "confusions.csv", "e4_added", v)
+        a, b = paired_bootstrap(e3, loc, n), paired_bootstrap(e4, e3, n)
+        one = lambda c: float(macro_f1_cm(c[0].sum(1)).mean())
+        rows.append({"variant": v, "clients": e3.shape[2], "E1": one(e1), "local": one(loc), "E3": one(e3), "E4": one(e4),
+                     "E3_minus_local": a["diff"], "E3_minus_local_lo": a["lo"], "E3_minus_local_hi": a["hi"], "E3_minus_local_p": a["p"],
+                     "E4_minus_E3": b["diff"], "E4_minus_E3_lo": b["lo"], "E4_minus_E3_hi": b["hi"], "E4_minus_E3_p": b["p"]})
+    return pd.DataFrame(rows), dirs
 
 
 def check_window_average(name, seed, path, method, ours):
@@ -169,7 +200,7 @@ def ttr_stat(eps: float):
 
 def boot_two(a, b, n, stat):
     """paired_bootstrap for stats that need the (cur, next) pair of arrays."""
-    w = client_draws(C, n, 0)
+    w = client_draws(a[0].shape[2], n, 0)
     d = stat(a, w) - stat(b, w)
     rest = d[1:]
     p = min(1.0, 2 * min(float((rest <= 0).mean()), float((rest >= 0).mean())))
@@ -178,7 +209,7 @@ def boot_two(a, b, n, stat):
 
 def per_seed(c, stat):
     """Observed stat per seed: mean and sample std over seeds."""
-    v = np.array([stat(c[i:i + 1], np.ones((1, C)))[0] for i in range(len(c))])
+    v = np.array([stat(c[i:i + 1], np.ones((1, c.shape[2])))[0] for i in range(len(c))])
     return v.mean(), v.std(ddof=1), v
 
 
@@ -236,6 +267,12 @@ def main() -> None:
         raise SystemExit(f"refusing: dirty source runs\n{dirty.to_string()}")
 
     S = {k: stack(k) for k in SOURCES}
+    sens, sens_dirs = sensitivity(n)
+    sprov = pd.DataFrame([provenance(d) for d in sens_dirs], columns=prov.columns)
+    if (sprov["dirty_outside_reports"] != "").any():
+        raise SystemExit("refusing: dirty variant runs\n" + sprov.to_string())
+    pd.concat([prov, sprov]).to_csv(out / "sources.csv", index=False)
+    sens.to_csv(out / "sensitivity.csv", index=False)
 
     # headline and ablation tables: mean ± std over seeds, and the seed-averaged score with its client-bootstrap interval
     w = client_draws(C, n, 0)
@@ -325,7 +362,15 @@ def main() -> None:
     L += ["", f"Observed, seed-averaged: variance over t1-t5 E3 {var_obs['E3']:.5f}, E4 {var_obs['E4 (e4_added)']:.5f}; "
           f"mean time-to-recover E3 {ttr_obs['E3']:.2f}, E4 {ttr_obs['E4 (e4_added)']:.2f} windows "
           "(a drop that never recovers counts as one window past t5).", "",
-          "Tier 3 (τc/τd frontier, H4): `TIER3.md`, written by the same command. Sensitivity variants (tier 2): not yet run.", "",
+          "## Sensitivity (tier 2, seed 42; one run per variant, so the intervals are client intervals only)", ""]
+    h = {k: float(macro_f1_cm(S[k]["cur"][0].sum(1)).mean()) for k in ("E1 centralized", "local + rehearsal", "E3", "E4 (e4_added)")}
+    L += ["| variant | clients | E1 | local + rehearsal | E3 | E4 | E3 − local (95% interval) | E4 − E3 (95% interval) |", "|---|---:|---:|---:|---:|---:|---:|---:|",
+          f"| headline (seed 42) | 15 | {h['E1 centralized']:.4f} | {h['local + rehearsal']:.4f} | {h['E3']:.4f} | {h['E4 (e4_added)']:.4f} | | |"]
+    L += [f"| {r.variant} | {r.clients} | {r.E1:.4f} | {r.local:.4f} | {r.E3:.4f} | {r.E4:.4f} | {r.E3_minus_local:+.4f} ({r.E3_minus_local_lo:+.4f} to {r.E3_minus_local_hi:+.4f}) | "
+          f"{r.E4_minus_E3:+.4f} ({r.E4_minus_E3_lo:+.4f} to {r.E4_minus_E3_hi:+.4f}) |" for r in sens.itertuples()]
+    if sens.empty:
+        L.append("| (no variant back yet) | | | | | | | |")
+    L += ["", "Tier 3 (τc/τd frontier, H4): `TIER3.md`, written by the same command.", "",
           "![per window](macro_f1_by_window.png)", ""]
     (out / "REPORT.md").write_text("\n".join(L), encoding="utf-8")
     m14_tier3.main(out)                          # frontier and H4, from stored logs
