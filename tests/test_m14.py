@@ -40,3 +40,14 @@ def test_bootstrap_finds_a_real_gap_and_not_a_null_one():
 
 def test_holm():
     assert np.allclose(holm([0.01, 0.04, 0.03]), [0.03, 0.06, 0.06])
+
+
+def test_false_positive_rate_and_custom_stat():
+    from ids.eval.stats import false_positive_rate_cm
+    cm = np.array([[8, 2, 0], [1, 5, 0], [0, 0, 3]])          # 2 of 10 benign rows flagged
+    assert np.isclose(false_positive_rate_cm(cm), 0.2)
+    assert false_positive_rate_cm(np.zeros((3, 3))) == 0
+    r = np.random.default_rng(3)
+    c = _counts(r, 0.2)
+    res = paired_bootstrap(c, c, n=50, stat=lambda a, w: series_score(a, w, false_positive_rate_cm))
+    assert res["diff"] == 0

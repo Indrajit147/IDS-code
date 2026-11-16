@@ -1,0 +1,6 @@
+id,test,diff,lo,hi,p,draws,floor,p_holm,result
+H1a,"E3 minus naive incremental, window-avg macro-F1",0.004427298844266736,-0.002361240531193492,0.009634374255665814,0.2174,10000,0.005,0.6522,no
+H1b,"E3 minus static, window-avg macro-F1",0.5299049457514513,0.5043694347572241,0.5577900928546162,0.0,10000,0.005,0.0,yes
+H2a,"E4 minus E3, variance of macro-F1 over t1-t5 (lower is better)",3.9267485312406285e-05,3.739105327341054e-06,0.00011585221440962206,0.0294,10000,,0.1176,no
+H2b,"E4 minus E3, mean time-to-recover in windows, eps 0.02 (lower is better)",0.0,0.0,0.3999999999999999,1.0,10000,,1.0,no
+H3,"E5 gated minus E4 edge, benign false-positive rate, boundary windows t1-t5, sampled rows (lower is better)",0.0,0.0,0.0,1.0,10000,,1.0,no
