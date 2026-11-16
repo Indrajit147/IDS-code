@@ -75,7 +75,7 @@ Rules:
 | M11 | Cloud LLM verifier (gated, JSON-constrained)       | E5, E6, novelty claim A       | ✅ Full pool: neither verifier helps. Gemma 2 2B (seeds 42, 43) relabels ddos as dos, D3 contains the damage; Mistral 7B (subset) agrees with the edge and fails the JSON contract on 19% | — |
 | M12 | LLM adaptation-policy agent (training decisions)   | "What changes through LLM reasoning" | ✅ Full pool, seeds 42 and 43: Gemma 2 2B delays every update and loses 0.10 window-average macro-F1 (0.8245 against E4's 0.9238); the heuristic ties E4 | — |
 | M13 | Federated GBDT baseline (stretch)                  | E7                            | ✅ Done: E7 within 0.008 of E1, 0.044 below E3; uplink 760 to 3,200 times E3's | — |
-| M14 | Full experiment matrix, ablations & sensitivity    | E1–E7, ablations, H1–H4       | 🟨 Tier 1 done (H1 vs static only; H1 vs naïve, H2, H3 not supported); tiers 3 and 2 open | — |
+| M14 | Full experiment matrix, ablations & sensitivity    | E1–E7, ablations, H1–H4       | 🟨 Tiers 1 and 3 done (H1 vs static only; H1 vs naïve, H2, H3 not supported); tier 2 open | — |
 | M15 | Reproducibility package & paper artifacts          | Notebook A/B, IoT-J outline   | ⬜ Not started | — |
 
 Legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked
@@ -212,10 +212,10 @@ The proposal ends with five open questions. Development proceeds with the defaul
 
 | # | Hypothesis | Tested in | How |
 |---|---|---|---|
-| H1 | DA-FedDistill improves average macro-F1 across drift windows versus static and naïve incremental baselines, by reducing client overfitting and enabling cross-client knowledge transfer without weight sharing | M7, M14 | Window-averaged macro-F1 of E3 vs static (M3) and naïve incremental (M6). **Dev, 3 seeds: supported against static, not against naïve. Full, 1 seed: supported against both on window average (+0.523, +0.005), but not at t5 against naïve (-0.003)** (see M7) |
-| H2 | Drift-triggered adaptation (ADWIN) reduces time-to-recover after major shifts and stabilizes performance variance across windows | M9, M14 | E4 vs E3: time-to-recover and variance across windows |
-| H3 | Gated LLM verification reduces false positives during high-drift windows, especially protocol-related ones, with overhead controlled through the LLM-call rate | M11, M14 | E5 vs E3/E4: benign false-positive rate per window on `csv_only` rows; LLM calls per 1k samples |
-| H4 | SHAP + LLM explanations give more actionable operator-facing narratives than SHAP alone, when constrained to SHAP-grounded evidence and stored for audit | M11, M14 | The proposal gives no measure, so this plan adds one: see M14 |
+| H1 | DA-FedDistill improves average macro-F1 across drift windows versus static and naïve incremental baselines, by reducing client overfitting and enabling cross-client knowledge transfer without weight sharing | M7, M14 | Window-averaged macro-F1 of E3 vs static (M3) and naïve incremental (M6). **Dev, 3 seeds: supported against static, not against naïve. Full, 1 seed: supported against both on window average (+0.523, +0.005), but not at t5 against naïve (-0.003)** (see M7). **M14, 3 seeds, client bootstrap with Holm: supported against static (+0.530), not against naïve (+0.0044, interval −0.0024 to +0.0096)** |
+| H2 | Drift-triggered adaptation (ADWIN) reduces time-to-recover after major shifts and stabilizes performance variance across windows | M9, M14 | E4 vs E3: time-to-recover and variance across windows. **M14, 3 seeds: not supported** (time-to-recover 2.40 against 2.40 windows; E4 slightly more variable, Holm p 0.12) |
+| H3 | Gated LLM verification reduces false positives during high-drift windows, especially protocol-related ones, with overhead controlled through the LLM-call rate | M11, M14 | E5 vs E3/E4: benign false-positive rate per window on `csv_only` rows; LLM calls per 1k samples. **M14, 3 seeds: not supported** (Gemma 2 2B never changes a benign decision; ~85 calls per 1k flows) |
+| H4 | SHAP + LLM explanations give more actionable operator-facing narratives than SHAP alone, when constrained to SHAP-grounded evidence and stored for audit | M11, M14 | The proposal gives no measure, so this plan adds one: see M14. **M14: (a) 0.36 of the verifier's reasons are grounded by the strict rule (0.42 name a top-5 SHAP feature); (b) 0.56 schema-valid on the first try, 0.9999 after retries. No SHAP-only comparison (rubric (c) dropped)** |
 
 ## Experiment matrix (from the proposal)
 
@@ -1083,8 +1083,8 @@ The multipliers and the four feature groups are my assumptions: the document giv
 - [ ] Sensitivity: 10/15/20 clients, Dirichlet α, τc/τd (the accuracy–cost frontier at 5/10/20/30%, D10), alternate timelines
 - [ ] Sensitivity to suspect features and rows: with IAT (D6), without `Number`/`Weight` (fact 8), without profiling rows (D7)
 - [ ] Sensitivity to the split: train on the official train block and test on the official test block, instead of M2's random split, to see whether mixing the official split inflates scores
-- [ ] Hypotheses H1–H4 evaluated, with statistical tests (H1–H3 done in tier 1; H4 is tier 3)
-- [ ] H4 measure, proposed here because the proposal gives none: (a) groundedness, the share of LLM reasons citing a feature that really is in that sample's top-k SHAP with the right sign; (b) schema-valid rate; (c) a fixed rubric scoring SHAP-only and SHAP+LLM explanations on a blinded sample for whether they name a concrete operator action. Rubric and scorers need settling before M11 outputs are read
+- [x] Hypotheses H1–H4 evaluated, with statistical tests (H1–H3 in tier 1; H4 (a), (b) in tier 3, descriptive)
+- [x] H4 measure ((a) and (b); (c) dropped), proposed here because the proposal gives none: (a) groundedness, the share of LLM reasons citing a feature that really is in that sample's top-k SHAP with the right sign; (b) schema-valid rate; (c) a fixed rubric scoring SHAP-only and SHAP+LLM explanations on a blinded sample for whether they name a concrete operator action. Rubric and scorers need settling before M11 outputs are read
 - **Acceptance:** all tables and figures are regenerated by one script from logged runs.
 
 **Design, fixed on 2026-11-15 before any M14 run (the user asked for it; the choices below are mine unless marked as the proposal's).**
@@ -1228,7 +1228,31 @@ That is 10 variants. Each needs its own partition (except the three feature vari
   - H3 uses the boundary setting on M11's sampled rows, the README's high-drift setting.
 - `macro_f1_by_window.png` shows E3, E4, local + rehearsal, E1, E7 and static, as seed means.
 
-Tier 1 is complete. Left in M14: tier 3 (τc/τd frontier, H4 groundedness and schema-valid rate, M12 seed 44 if GPU quota allows), then tier 2 (ten sensitivity variants).
+Tier 1 is complete.
+
+*Tier 3 done (2026-11-16):* [`reports/m14/full/TIER3.md`](reports/m14/full/TIER3.md), from `scripts/m14_tier3.py`, which `m14_report.py` calls. It uses no training and no LLM calls: only M11's stored rows and logs (`evidence.parquet`, `verified.parquet` and `llm_log.jsonl`, all gitignored and local) and M12's `decisions_llm.jsonl`.
+- **τc/τd frontier (D10).** E4's gate as M11 ran it (adaptive thresholds plus the drift hold), swept over base τc 0.40–0.98 and τd in `gate.tune_tau_d`, on M11's sampled rows. Each budget's point is chosen on own-window rows and read out on boundary rows.
+
+  | budget | own window: rate, errors caught | boundary: rate, errors caught |
+  |---:|---|---|
+  | 5% | 4.9%, 24% | 7.6%, 16% |
+  | 10% | 9.8%, 44% | 11.8%, 21% |
+  | 20% | 19.7%, 72% | 21.6%, 33% |
+  | 30% | 29.2%, 85% | 30.5%, 38% |
+
+  - After drift the gate escalates a little *more* than its budget and catches about half as many errors. Most boundary errors are confident ones, the gate's blind spot: 0.668 / 0.680 / 0.662 of them have confidence ≥ 0.9, against 0.15 on own-window rows.
+  - At every budget, E5 on the always-on rows is 0.0004 to 0.0019 below the edge, and the false-positive rate never changes. Raising the budget doesn't rescue H3 with this verifier.
+  - Limits: these are sampled-row rates (each client and window weighted equally), not full-stream rates. The LLM side is only the always-on sample.
+- **H4 (a), the strict groundedness rule fixed in the design.**
+  - Of the verifier's reasons (about 43,000 per seed), 0.420 / 0.422 / 0.413 name a feature in the row's top-5 SHAP, and 0.362 / 0.366 / 0.358 also get the direction right.
+  - Under 1% of replies have every reason grounded. Gemma nearly always adds reasons that cite only a probability or the recent class share, which the rule counts as not grounded.
+  - M11's weak check (every reason names a feature or class) gave 0.97, so it overstated grounding by more than half.
+  - The direction words are matched anywhere in a reason, so the rule is crude. A hand check of 12 reasons agreed with every label it gave.
+- **H4 (b), schema-valid rate.** Verifier: 0.554 / 0.560 / 0.560 on the first try, 0.9999 after retries. Policy agent (M12, seeds 42 and 43): 0.80 on the first try, 1.00 after retries.
+- **Policy reasons (weak check only).** Explicit contradictions of two yes/no facts (new classes, ADWIN fired): 0 of 212 and 1 of 210 reasons, a lower bound. But Gemma chose urgency low in every decision where a new class was present (73 / 73 and 74 / 74), so its decisions ignore the evidence its reasons cite.
+- **Not done: M12 seed 44.** It needs Kaggle GPU quota and isn't needed for E1–E7.
+
+Left in M14: tier 2 (ten sensitivity variants, Kaggle CPU).
 
 *Decided 2026-11-15 (the user asked for the recommended options):* (a) all three tiers as scoped, tier 2 last; (b) H4 (c) is dropped, so H4 is tested on (a) groundedness and (b) the schema-valid rate only, and the paper says the rubric wasn't fixed before M11's outputs were read; (c) M12 gets seed 44 only if GPU quota is left after M11 seed 44.
 
@@ -1277,6 +1301,7 @@ Tier 1 is complete. Left in M14: tier 3 (τc/τd frontier, H4 groundedness and s
 | 2026-11-15 | M14 design | Design fixed in the README before any run: three tiers (seed 44 and ablations on `e4_added`; ten sensitivity variants at one seed; frontier and H4 from stored logs), client bootstrap with Holm correction and a 0.005 size floor, one report script. H4's rubric (c) dropped because it wasn't fixed before M11's outputs were read. |
 | 2026-11-15 | M14 part A | Seeds 42, 43 and 44 on Kaggle CPU at `3829073`, clean, with per-client counts. Reruns match the published M4 and M8 exactly. M3, M6 and M7 move by at most 0.0008 in window average, within thread noise. Three seeds: E3 0.9256 ± 0.0004 against local-only 0.9207 ± 0.0004, ahead in window average and behind at t5 in every seed. |
 | 2026-11-15 | M14 part B | M9 with the E4 ablations and M13, seeds 42, 43 and 44, Kaggle CPU at `83de1b9`. E4 (`e4_added`) 0.9241 ± 0.0004, 0.0015 below E3. No ablation (no ADWIN trigger, all features, no rehearsal) moves window average by more than 0.0014; the fixed schedule without the trigger is ahead of E4 in every seed. Plain-ADWIN `e4` at seed 42 moved 0.8315 → 0.8418 on rerun (cause not traced). E7 0.8814 in all three seeds. |
+| 2026-11-16 | M14 tier 3 ✅ | `scripts/m14_tier3.py`, from stored logs. Frontier: own-window thresholds catch 24/44/72/85% of edge errors at 5/10/20/30%, but only 16/21/33/38% after drift; E5 below the edge and FP unchanged at every budget. H4 (a) strict groundedness 0.36 (M11's weak check said 0.97); (b) 0.56 valid first try, 0.9999 after retries. M12 seed 44 skipped (GPU). |
 | 2026-11-16 | M14 tier 1 ✅ | `scripts/m14_report.py` and `reports/m14/full/`: client-bootstrap intervals with Holm over five tests. H1 holds against static (+0.530) and not against naïve (+0.0044, interval includes 0). H2 isn't supported (time-to-recover equal, E4 slightly more variable). H3 isn't supported (FP rate identical). Of the E4 ablations, only D_pub benign-only passes the rule. Every source reproduces its stored numbers from per-client counts. |
 | 2026-11-16 | M14 M11 seed 44, D_pub benign-only | M11 seed 44 on Kaggle T4 at `8e27dd1`, clean: boundary E5 0.6639 against edge 0.6652, false-positive rate unchanged; three seeds E5 0.6726 ± 0.0076 against 0.6738 ± 0.0074, so H3 isn't supported. Gemma again turns every escalated ddos into dos. Benign-only D_pub, seeds 42 to 44 at `16cf432`, clean: E3 0.5671 ± 0.1285 and E4 0.4794 ± 0.0237 against 0.9256 and 0.9241 with the proposal's D_pub; guarded versions match local-only (0.921). Distillation needs attack rows in D_pub. |
 | 2026-11-16 | M14 benign-only D_pub, built | `notebooks/m14_variant_kaggle.ipynb` for E3 and E4 on the benign-only D_pub partition, seeds 42, 43 and 44 on Kaggle CPU. Dev pipeline check passes (E3 falls to 0.6056 on dev, a check and not a result). Fixed: a variant build of M2 no longer overwrites the headline M2 report. Full-pool runs next. |

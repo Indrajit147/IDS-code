@@ -4,7 +4,8 @@ Reads each source's confusions.csv (slices csv_client:<c>, written by the evalua
 client_counts.csv (built here once from the gitignored verified.parquet). Checks that every source reproduces
 its own stored window average, lists each source's run and commit, and refuses to run when a source run was
 dirty in a file outside reports/. Writes reports/m14/full/: REPORT.md, headline.csv, ablation.csv,
-hypotheses.csv, sources.csv, macro_f1_by_window.png.
+hypotheses.csv, llm.csv, sources.csv, macro_f1_by_window.png, and through m14_tier3.py TIER3.md,
+frontier.csv, frontier_budgets.csv, frontier.png and h4.csv.
 
     python scripts/m14_report.py [--draws 10000]
 """
@@ -24,6 +25,8 @@ from ids.eval.plots import fig_curves
 from ids.eval.stats import (client_draws, false_positive_rate_cm, holm, macro_f1_cm, pair_scores,
                             paired_bootstrap, series_score)
 from ids.utils.config import REPO_ROOT, load_config
+
+import m14_tier3  # noqa: E402  (scripts/ is on the path when run as a script)
 
 REP, RUNS = REPO_ROOT / "reports", REPO_ROOT / "results" / "runs"
 SEEDS, WINDOWS, C = (42, 43, 44), range(6), 15
@@ -322,9 +325,10 @@ def main() -> None:
     L += ["", f"Observed, seed-averaged: variance over t1-t5 E3 {var_obs['E3']:.5f}, E4 {var_obs['E4 (e4_added)']:.5f}; "
           f"mean time-to-recover E3 {ttr_obs['E3']:.2f}, E4 {ttr_obs['E4 (e4_added)']:.2f} windows "
           "(a drop that never recovers counts as one window past t5).", "",
-          "Not in tier 1: the τc/τd frontier and H4 (tier 3), the sensitivity variants (tier 2).", "",
+          "Tier 3 (τc/τd frontier, H4): `TIER3.md`, written by the same command. Sensitivity variants (tier 2): not yet run.", "",
           "![per window](macro_f1_by_window.png)", ""]
     (out / "REPORT.md").write_text("\n".join(L), encoding="utf-8")
+    m14_tier3.main(out)                          # frontier and H4, from stored logs
     print(f"report -> {out}")
 
 
