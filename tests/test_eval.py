@@ -130,6 +130,15 @@ def test_slices_absent_without_source_or_clusters():
     assert set(ev.frame(None)["slice"]) == {"all"}
 
 
+def test_csv_only_slice_kept_when_every_row_is_csv():
+    """M14's no_profiling variant: no profiling rows left, but csv_only is still the headline slice."""
+    from ids.eval.harness import SRC_CSV
+    ts = TestSet(np.zeros((4, 1), np.float32), np.array([0, 0, 1, 1]), np.zeros(4, int), np.full(4, SRC_CSV))
+    ev = Evaluator({0: ts}, NAMES)
+    ev.evaluate("m", 0, predict_global(_Fixed(0)))
+    assert ev.summary("m", "csv_only")["window_avg_macro_f1"] == ev.summary("m", "all")["window_avg_macro_f1"]
+
+
 def _edge(classes=(0, 2, 5), n_classes=6):
     r = np.random.default_rng(0)
     y = r.choice(classes, 2000)

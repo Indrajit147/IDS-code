@@ -1285,7 +1285,20 @@ Tier 1 is complete.
     | `with_iat` | 0.9891 | 0.9874 | 0.9852 | 0.9836 | −0.0022 |
     | `no_number_weight` | 0.8833 | 0.9109 | 0.9114 | 0.9083 | +0.0006 |
 
-  - **Not yet checked on dev:** `alpha0.1` (stopped mid-run at the user's request; its partial outputs aren't committed), `alpha1.0`, `reseed`, `no_profiling`, `official_split`. To resume, run `python scripts/m14_variant.py --variant <name> --pool dev` for each, then the Kaggle runs.
+  - **All ten dev chains pass (2026-11-17).** The other five, dev window average (pipeline check, not a result):
+
+    | variant | E1 | local | E3 | E4 | E3 − local |
+    |---|---:|---:|---:|---:|---:|
+    | `alpha0.1` | 0.8841 | 0.9583 | 0.6782 | 0.7407 | −0.2801 |
+    | `alpha1.0` | 0.8841 | 0.8909 | 0.8901 | 0.8885 | −0.0008 |
+    | `reseed` | 0.8851 | 0.9075 | 0.8999 | 0.8970 | −0.0077 |
+    | `no_profiling` | 0.8801 | 0.9084 | 0.9064 | 0.9022 | −0.0020 |
+    | `official_split` | 0.8400 | 0.8865 | 0.8893 | 0.8864 | +0.0028 |
+
+    - Checked by hand: `reseed` gives a different partition (other hash; 631,392 dev rows against 631,431, as D_pub is redrawn too). In `official_split`, every CSV train row comes before row 7,160,831 and every test row starts at it.
+    - Watch on the full pool: with α 0.1, E3 collapses on dev (0.678 against local 0.958), much as with benign-only D_pub.
+  - **Bug found and fixed by `no_profiling`.** The evaluator made the `csv_only` slice only when some test rows weren't CSV rows. Without profiling rows every row is a CSV row, so every script's headline summary was empty and M4 failed. `csv_only` is now made whenever rows carry a source ([harness.py](src/ids/eval/harness.py), test in `tests/test_eval.py`). Earlier runs all had profiling rows, so none of their numbers change.
+  - **Next:** the ten full-pool runs on Kaggle CPU at seed 42, one per session, `VARIANT` set in the first cell of `notebooks/m14_variant_kaggle.ipynb`.
 - **Full pool.** One Kaggle CPU run per variant, about 5–6 h each (estimated, not measured).
 
 *Decided 2026-11-15 (the user asked for the recommended options):* (a) all three tiers as scoped, tier 2 last; (b) H4 (c) is dropped, so H4 is tested on (a) groundedness and (b) the schema-valid rate only, and the paper says the rubric wasn't fixed before M11's outputs were read; (c) M12 gets seed 44 only if GPU quota is left after M11 seed 44.

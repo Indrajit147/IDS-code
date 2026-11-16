@@ -97,7 +97,7 @@ class Evaluator:
 
     def _slices(self, ts: TestSet) -> dict[str, np.ndarray]:
         out = {}
-        if ts.source is not None and (ts.source != SRC_CSV).any():
+        if ts.source is not None:                 # kept when every row is CSV (no_profiling), as it's the headline slice
             out["csv_only"] = ts.source == SRC_CSV
         for k in sorted(set(self.clusters.values())):
             out[f"cluster:{k}"] = np.isin(ts.client, [c for c, v in self.clusters.items() if v == k])
