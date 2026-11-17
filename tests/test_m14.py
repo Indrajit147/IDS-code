@@ -51,3 +51,18 @@ def test_false_positive_rate_and_custom_stat():
     c = _counts(r, 0.2)
     res = paired_bootstrap(c, c, n=50, stat=lambda a, w: series_score(a, w, false_positive_rate_cm))
     assert res["diff"] == 0
+
+
+def test_h4c_paired_items_and_exact_mcnemar():
+    import sys
+    from pathlib import Path
+    import pandas as pd
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from m14_h4c import ACTION, mcnemar_exact, paired
+    assert mcnemar_exact(0, 0) == 1.0 and mcnemar_exact(5, 5) == 1.0
+    assert abs(mcnemar_exact(0, 6) - 2 / 64) < 1e-12                      # all six discordant pairs one way
+    df = pd.DataFrame({"row": [1, 1, 2, 2, 3, 3], "arm": ["shap", "shap_llm"] * 3, "x": [1, 0, 1, 1, 0, 1]})
+    r = paired(df, "x")
+    assert (r["pairs"], r["llm_only_yes"], r["shap_only_yes"]) == (3, 1, 1) and r["diff"] == 0
+    assert ACTION.search("Rate-limit the source") and ACTION.search("isolate the device")
+    assert not ACTION.search("Further investigation is recommended; monitor Number")

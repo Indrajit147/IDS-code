@@ -1,0 +1,3 @@
+item,pairs,shap,shap_llm,diff,llm_only_yes,shap_only_yes,mcnemar_p
+label_correct,100,0.7,0.45,-0.24999999999999994,15,40,0.0010158471941252856
+action_lexicon,100,0.0,0.0,0.0,0,0,1.0
