@@ -1,0 +1,103 @@
+{
+  "pool": "full",
+  "timeline": "category_intro",
+  "seed": 7,
+  "n_clients": 15,
+  "dirichlet_alpha": 0.5,
+  "dedup": true,
+  "test_frac": 0.2,
+  "n_csv_duplicates_dropped": 7379,
+  "n_profiling_duplicates_dropped": 172,
+  "population_drift": {
+    "window": "t5",
+    "drifted_clients": [
+      0,
+      4,
+      5,
+      7,
+      14
+    ]
+  },
+  "devices": {
+    "device_groups": [
+      "Blink_Camera|LAN",
+      "Blink_Camera|WAN",
+      "Blink_Mini_Camera|Power",
+      "Ecobee_Camera|LAN",
+      "Ecobee_Camera|Power",
+      "Ecobee_Camera|WAN",
+      "M1T_Camera|LAN",
+      "M1T_Camera|Power",
+      "M1T_Camera|WAN",
+      "Multifunctional_Pager|LAN",
+      "Multifunctional_Pager|Power",
+      "Multifunctional_Pager|WAN",
+      "Owltron_Camera|LAN",
+      "Owltron_Camera|Power",
+      "Owltron_Camera|WAN",
+      "SenseUBaby|Power",
+      "SenseU|LAN",
+      "SenseU|WAN",
+      "Singcall|LAN",
+      "Singcall|Power",
+      "Singcall|WAN"
+    ],
+    "held_back_until_drift": [
+      "Ecobee_Camera|WAN",
+      "M1T_Camera|LAN",
+      "Multifunctional_Pager|Power",
+      "Owltron_Camera|Power",
+      "SenseUBaby|Power"
+    ],
+    "owner": {
+      "Ecobee_Camera|WAN": 13,
+      "Owltron_Camera|Power": 12,
+      "M1T_Camera|LAN": 2,
+      "SenseUBaby|Power": 6,
+      "Multifunctional_Pager|Power": 7,
+      "M1T_Camera|WAN": 0,
+      "Blink_Camera|WAN": 3,
+      "Blink_Mini_Camera|Power": 5,
+      "Blink_Camera|LAN": 1,
+      "Multifunctional_Pager|WAN": 10,
+      "Owltron_Camera|LAN": 8,
+      "Singcall|Power": 14,
+      "Singcall|WAN": 4,
+      "SenseU|LAN": 9,
+      "SenseU|WAN": 11,
+      "Singcall|LAN": 13,
+      "Ecobee_Camera|Power": 12,
+      "Owltron_Camera|WAN": 2,
+      "M1T_Camera|Power": 6,
+      "Ecobee_Camera|LAN": 7,
+      "Multifunctional_Pager|LAN": 0
+    },
+    "background": [
+      "Active",
+      "ActiveBroker",
+      "Idle"
+    ]
+  },
+  "n_dpub": 90429,
+  "dpub_by_class": {
+    "Benign": 5000,
+    "DDoS-ICMP": 18865,
+    "DDoS-SYN": 9743,
+    "DDoS-TCP": 9871,
+    "DDoS-UDP": 19980,
+    "DoS-ICMP": 5147,
+    "DoS-SYN": 5405,
+    "DoS-TCP": 4625,
+    "DoS-UDP": 7045,
+    "Recon-OS-Scan": 197,
+    "Recon-Ping-Sweep": 46,
+    "Recon-Port-Scan": 1010,
+    "Recon-VulScan": 50,
+    "MQTT-DDoS-Connect-Flood": 2150,
+    "MQTT-DDoS-Publish-Flood": 360,
+    "MQTT-DoS-Connect-Flood": 159,
+    "MQTT-DoS-Publish-Flood": 529,
+    "MQTT-Malformed-Data": 69,
+    "ARP-Spoofing": 178
+  }
+}
