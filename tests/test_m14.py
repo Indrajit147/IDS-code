@@ -78,3 +78,13 @@ def test_m15_check_compare_tolerance_and_missing_cells():
     assert cells(summ, "e3") == {"window_avg": 0.9, "t0": 1.0, "t1": 0.8} and cells(summ, "e4") == {}
     r = {x["cell"]: x["ok"] for x in compare({"window_avg": 0.9049, "t0": 0.994}, cells(summ, "e3"))}
     assert r == {"window_avg": True, "t0": False, "t1": False}          # 0.0049 passes, 0.006 fails, a missing cell fails
+
+
+def test_m15_paper_number_formatting():
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from m15_paper import diff_cells, pval
+    assert diff_cells(0.0015, 0.0002, -0.0027) == ["+0.0015", "[+0.0002, $-$0.0027]"]
+    assert diff_cells(3.9e-5, 3.7e-6, 1.2e-4)[0] == "+3.90e$-$05"            # all tiny: scientific, so it doesn't print as 0
+    assert pval(0.0) == "$<10^{-4}$" and pval(0.0, 1000) == "0" and pval(0.0226) == "0.0226"
