@@ -76,7 +76,7 @@ Rules:
 | M12 | LLM adaptation-policy agent (training decisions)   | "What changes through LLM reasoning" | ✅ Full pool, seeds 42 and 43: Gemma 2 2B delays every update and loses 0.10 window-average macro-F1 (0.8245 against E4's 0.9238); the heuristic ties E4 | — |
 | M13 | Federated GBDT baseline (stretch)                  | E7                            | ✅ Done: E7 within 0.008 of E1, 0.044 below E3; uplink 760 to 3,200 times E3's | — |
 | M14 | Full experiment matrix, ablations & sensitivity    | E1–E7, ablations, H1–H4       | ✅ Tiers 1–3 done (H1 vs static only; H1 vs naïve, H2, H3 not supported; E3 collapses under strong label skew, α 0.1) | — |
-| M15 | Reproducibility package & paper artifacts          | Notebook A/B, IoT-J outline   | ⬜ Not started | — |
+| M15 | Reproducibility package & paper artifacts          | Notebook A/B, IoT-J outline   | 🟨 Built; Notebooks A/B not yet run on Kaggle | — |
 
 Legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked
 
@@ -1340,8 +1340,8 @@ Tier 1 is complete.
 ### M15: Reproducibility package & paper artifacts
 **Goal:** a submission-ready artifact.
 - [ ] Kaggle Notebook A (prep + FL simulation) and Notebook B (inference + LLM + XAI)
-- [ ] Released configs: `experiment_config.json`, `client_partitions.json`, `window_definition.json`, `model_hparams.json`, LLM JSONL logs
-- [ ] Figures/tables mapped to the IEEE IoT-J outline; privacy/threat-model section (D5)
+- [x] Released configs: `experiment_config.json`, `client_partitions.json`, `window_definition.json`, `model_hparams.json`, LLM JSONL logs (`release/`; M12 seed 44's log is added when that run is back)
+- [x] Figures/tables mapped to the IEEE IoT-J outline (`scripts/m15_paper.py`, `paper/ARTIFACTS.md`); privacy/threat-model section (D5) drafted in `paper/threat_model.md`
 - **Acceptance:** a fresh environment reproduces the headline table within ±0.005 macro-F1. A different thread count alone already moves individual cells by up to 0.004 (measured in M4), so the check must not demand exact equality.
 
 **Design, fixed on 2026-11-17 before any M15 run.** The two choices marked *decided* were the user's, from options I proposed; the rest are mine unless marked as the proposal's.
@@ -1370,6 +1370,7 @@ Tier 1 is complete.
 *The check:* `scripts/m15_check.py`.
 - **A:** the notebook runs untagged in a fresh clone, so its reports overwrite the seed-42 ones in that clone. The check compares each headline cell with the committed file (`git show HEAD:…`): CSV rows, window average and each window, for E1, static, naïve, local + rehearsal (M6 and M7), E3, E4 and E7. It passes if every difference is within ±0.005, and writes `reports/m15/full/CHECK_A.md`.
 - **B:** passes if both refits' `fit_check.json` are within ±0.005 of M9 in every window. The verifier's results on the smaller sample are reported, not tested.
+- **Dev rehearsal (2026-11-17, local, seed 42, 4 threads):** Notebook A's step list on the dev pool. M2 to M9 ran clean and the check passed on 48 cells: E1 within 0.0008 of the committed file, every other method identical. M13 failed locally because the laptop ran out of memory (OpenBLAS allocation failures in the per-client workers, with about 0.8 GB free), so its 8 cells were compared with the unchanged committed file and test nothing. M13 ran clean on Kaggle in M13 and in all ten M14 variants. The dev outputs were not committed.
 - **What it covers:** this checks seed 42, not the three-seed means. Tier 1 put the seed spread at about 0.0004 for E3 and E4, so one seed inside ±0.005 is strong evidence for the table, but not the table itself.
 
 *Released artifacts:* `scripts/m15_release.py` writes `release/`.
@@ -1421,6 +1422,7 @@ Tier 1 is complete.
 | 2026-11-15 | M14 design | Design fixed in the README before any run: three tiers (seed 44 and ablations on `e4_added`; ten sensitivity variants at one seed; frontier and H4 from stored logs), client bootstrap with Holm correction and a 0.005 size floor, one report script. H4's rubric (c) dropped because it wasn't fixed before M11's outputs were read. |
 | 2026-11-15 | M14 part A | Seeds 42, 43 and 44 on Kaggle CPU at `3829073`, clean, with per-client counts. Reruns match the published M4 and M8 exactly. M3, M6 and M7 move by at most 0.0008 in window average, within thread noise. Three seeds: E3 0.9256 ± 0.0004 against local-only 0.9207 ± 0.0004, ahead in window average and behind at t5 in every seed. |
 | 2026-11-15 | M14 part B | M9 with the E4 ablations and M13, seeds 42, 43 and 44, Kaggle CPU at `83de1b9`. E4 (`e4_added`) 0.9241 ± 0.0004, 0.0015 below E3. No ablation (no ADWIN trigger, all features, no rehearsal) moves window average by more than 0.0014; the fixed schedule without the trigger is ahead of E4 in every seed. Plain-ADWIN `e4` at seed 42 moved 0.8315 → 0.8418 on rerun (cause not traced). E7 0.8814 in all three seeds. |
+| 2026-11-17 | M15 🟨 (built) | `release/` (configs, partitions, gzipped LLM logs, SHA256SUMS, MANIFEST), `scripts/m15_check.py`, Notebooks A and B, `scripts/m15_paper.py` (seven tables, two figures, outline map), `paper/threat_model.md`. CIC's terms allow redistribution with citation; processed data published as a public Kaggle dataset. Dev rehearsal of Notebook A: M2–M9 pass (largest difference 0.0008, E1); M13 not rehearsed locally (out of memory). Notebooks A and B not yet run on Kaggle. |
 | 2026-11-17 | M14 H4 (c) for the record | `scripts/m14_h4c.py`: blinded 200-text sheet (100 rows of M11 seed 42, SHAP-only template vs Gemma's text), rubric fixed now and disclosed as not preregistered. Automatic items: label correct 0.70 SHAP-only vs 0.45 Gemma (McNemar p = 0.001); no Gemma reply names a concrete operator action (0 of 14,066). Human scoring pending. |
 | 2026-11-17 | M14 ✅ (tier 2) | Ten sensitivity variants on Kaggle CPU at seed 42 and `57cfc55`, clean, about 6.5 h each; counts reproduce every stored window average. E3's gain over local-only is never significant on the positive side. Under α 0.1 E3 collapses (0.709 against local 0.957, worse on 14 of 15 clients), the same failure as benign-only D_pub. The reseeded partition moves E3 by 0.010, 25× the seed spread. The official split lowers every method by 0.03–0.05. IAT lifts all methods to about 0.99 (D6). E4 never beats E3. |
 | 2026-11-16 | M14 tier 3 ✅ | `scripts/m14_tier3.py`, from stored logs. Frontier: own-window thresholds catch 24/44/72/85% of edge errors at 5/10/20/30%, but only 16/21/33/38% after drift; E5 below the edge and FP unchanged at every budget. H4 (a) strict groundedness 0.36 (M11's weak check said 0.97); (b) 0.56 valid first try, 0.9999 after retries. M12 seed 44 skipped (GPU). |
