@@ -1,8 +1,12 @@
 # CICIoMT2024, processed for drift-adaptive federated IDS experiments
 
-The processed input of the project's experiment pipeline. Notebooks A and B in the repository's `notebooks/` folder attach this dataset and check every file against [`SHA256SUMS`](SHA256SUMS) before running.
+The processed input of the project's experiment pipeline. Notebooks A and B in the [repository](https://github.com/Indrajit147/IDS-code)'s `notebooks/` folder attach this dataset and check every file against [`release/dataset/SHA256SUMS`](https://github.com/Indrajit147/IDS-code/blob/main/release/dataset/SHA256SUMS) before running.
 
-**Before publishing:** the uploader checks the Canadian Institute for Cybersecurity's terms for redistributing CICIoMT2024 derivatives and sets the licence field to match. This card doesn't choose a licence.
+## Licence and terms
+
+- **CICIoMT2024 (all files).** The Canadian Institute for Cybersecurity's [dataset terms](https://www.unb.ca/cic/datasets/index.html) say: "With any of our datasets, you may redistribute, republish, and mirror our datasets in any form. However, any use or redistribution of the data must include a citation to the dataset and the research paper listed." (checked 2026-11-17). Anyone using this copy must cite Dadkhah et al. 2024 (below).
+- **`ble.parquet` and `wifi_profiling.parquet`** also come from the Zenodo record below, under CC BY 4.0, which requires attribution.
+- **Kaggle licence field:** *Other (specified in description)*. This processed copy adds no licence of its own beyond these terms.
 
 ## Files
 
@@ -16,7 +20,7 @@ The processed input of the project's experiment pipeline. Notebooks A and B in t
 
 ## How it was built
 
-`scripts/m1_prepare_data.py` in the repository (about 100 s on a laptop):
+[`scripts/m1_prepare_data.py`](https://github.com/Indrajit147/IDS-code/blob/main/scripts/m1_prepare_data.py) in the repository (about 100 s on a laptop):
 - **Input:** a merge of CICIoMT2024's 72 Wi-Fi/MQTT attack CSV files, `ciciomt2024_full_8p7m.csv` (SHA-256 `f7cb6fe30c4e4f0cb415a5e888f9bfcc7a652189a094447c72b8428b6b8f0eb6`). The merge was done by hand and isn't scripted.
 - **Conversion:** read in chunks and written to Parquet.
   - Features are stored as float32, except where the cast would merge more than 0.1% of a column's distinct values. Those eight columns stay float64: `Rate`, `Srate`, `AVG`, `Std`, `IAT`, `Magnitue`, `Radius`, `Covariance`.
