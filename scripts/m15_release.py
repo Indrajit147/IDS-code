@@ -45,10 +45,11 @@ def main() -> None:
     cfg = load_config(env="kaggle", overrides=["resources.n_jobs=4", "seed=42"])
     (OUT / "llm_logs").mkdir(parents=True, exist_ok=True)
     (OUT / "dataset").mkdir(parents=True, exist_ok=True)
-    (OUT / "experiment_config.json").write_text(dumps(cfg, indent=2), encoding="utf-8")
-    (OUT / "model_hparams.json").write_text(dumps({k: cfg[k] for k in HPARAM_SECTIONS}, indent=2), encoding="utf-8")
+    (OUT / "experiment_config.json").write_text(dumps(cfg, indent=2), encoding="utf-8", newline="\n")
+    (OUT / "model_hparams.json").write_text(dumps({k: cfg[k] for k in HPARAM_SECTIONS}, indent=2), encoding="utf-8", newline="\n")
     for name in ("client_partitions.json", "window_definition.json"):
-        shutil.copyfile(REPO_ROOT / "reports" / "m2" / "full" / name, OUT / name)
+        text = (REPO_ROOT / "reports" / "m2" / "full" / name).read_text(encoding="utf-8")   # as text: a Windows checkout has CRLF, git stores LF
+        (OUT / name).write_text(text, encoding="utf-8", newline="\n")
     missing = []
     for name, src in LOGS.items():
         f = REPO_ROOT / "reports" / src
@@ -57,12 +58,12 @@ def main() -> None:
         else:
             missing.append(src)
     proc = REPO_ROOT / "data" / "processed"
-    (OUT / "dataset" / "SHA256SUMS").write_text("".join(f"{sha256_file(proc / n)}  {n}\n" for n in PROCESSED), encoding="utf-8")
+    (OUT / "dataset" / "SHA256SUMS").write_text("".join(f"{sha256_file(proc / n)}  {n}\n" for n in PROCESSED), encoding="utf-8", newline="\n")
     commit = subprocess.run(["git", "-C", str(REPO_ROOT), "rev-parse", "--short", "HEAD"], capture_output=True, text=True).stdout.strip()
     files = sorted(p for p in OUT.rglob("*") if p.is_file() and p.name not in ("MANIFEST.json", "README.md"))
     manifest = {"commit": commit, "missing_logs": missing,
                 "files": {p.relative_to(OUT).as_posix(): {"bytes": p.stat().st_size, "sha256": sha256_file(p)} for p in files}}
-    (OUT / "MANIFEST.json").write_text(dumps(manifest, indent=2), encoding="utf-8")
+    (OUT / "MANIFEST.json").write_text(dumps(manifest, indent=2), encoding="utf-8", newline="\n")
     print(f"release -> {OUT}: {len(files)} files; missing logs: {missing or 'none'}")
 
 

@@ -1,20 +1,20 @@
 {
-  "commit": "c4b9919",
+  "commit": "ff1d87d",
   "missing_logs": [
     "m12/full/seed44/llm_log_llm.jsonl"
   ],
   "files": {
     "client_partitions.json": {
-      "bytes": 2536,
-      "sha256": "1de2065e7905d23a1e8fb99656b5e7fdd6c29b8e735396b92928784dddd27516"
+      "bytes": 2434,
+      "sha256": "7cd4444abe032243b8a592a4949defe83e92fd3888c54945c1685f82fdb969ef"
     },
     "dataset/SHA256SUMS": {
-      "bytes": 348,
-      "sha256": "58e00e182e20ab3110be90feaf53c3d334d14e67a3a0d409b0eb3a2c592d0c5b"
+      "bytes": 344,
+      "sha256": "0937cb71eefae56da7d4492191cd88b2c04c45b7fff1297de2a2ddc656c379dd"
     },
     "experiment_config.json": {
-      "bytes": 4993,
-      "sha256": "122ca2880dc20720fbe0cf5813eb564d6be32c600614ff98bf5a8c34548f77c2"
+      "bytes": 4734,
+      "sha256": "f936074664e7620844fc68251188553e179ec9f852fe90f64db084cee279c80b"
     },
     "llm_logs/m11_gemma2-2b_seed42.jsonl.gz": {
       "bytes": 3132954,
@@ -41,12 +41,12 @@
       "sha256": "c6f20b1342df0f871019a577b4f8f44bbda06a0759645dc99f2995b1b82a06ab"
     },
     "model_hparams.json": {
-      "bytes": 2361,
-      "sha256": "1ae6085ed5fc9d512912c37caf05f32a15a601a56d87dec1a33d09171f7bef73"
+      "bytes": 2237,
+      "sha256": "ebaefba0296e5551c7e7dbe4461b5fe9970bf93e4ada857e3b9222eea2aeacc4"
     },
     "window_definition.json": {
-      "bytes": 3199,
-      "sha256": "682ece08613f8f2c662e2a40e6b8908e8dc740851e1f5ac028a9f05fe2c4889c"
+      "bytes": 3043,
+      "sha256": "0b3845828d57869827c987db9d0f2c7f20bba5b29adc7c253dd2b7b4fc5f674a"
     }
   }
 }
