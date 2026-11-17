@@ -1,6 +1,6 @@
 # CICIoMT2024, processed for drift-adaptive federated IDS experiments
 
-The processed input of the project's experiment pipeline. Notebooks A and B in the [repository](https://github.com/Indrajit147/IDS-code)'s `notebooks/` folder attach this dataset and check every file against [`release/dataset/SHA256SUMS`](https://github.com/Indrajit147/IDS-code/blob/main/release/dataset/SHA256SUMS) before running.
+The processed input of the project's experiment pipeline, published on Kaggle as [indrajit147/ciciomt2024-processed-for-federated-ids](https://www.kaggle.com/datasets/indrajit147/ciciomt2024-processed-for-federated-ids). Notebooks A and B in the [repository](https://github.com/Indrajit147/IDS-code)'s `notebooks/` folder attach this dataset and check every file against [`release/dataset/SHA256SUMS`](https://github.com/Indrajit147/IDS-code/blob/main/release/dataset/SHA256SUMS) before running.
 
 ## Licence and terms
 

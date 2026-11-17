@@ -1354,7 +1354,7 @@ Tier 1 is complete.
 
 *Decided: where a fresh run starts.*
 - The processed Parquet from M1 (four files plus `data_manifest.json` with SHA-256s) is published as a public Kaggle dataset, citing CIC (Dadkhah et al. 2024).
-- CIC's terms checked on 2026-11-17: all CIC datasets may be redistributed in any form, with a citation to the dataset and its paper (recorded in the dataset card, `release/dataset/README.md`). The user does the upload.
+- CIC's terms checked on 2026-11-17: all CIC datasets may be redistributed in any form, with a citation to the dataset and its paper (recorded in the dataset card, `release/dataset/README.md`). Published 2026-11-17 as [indrajit147/ciciomt2024-processed-for-federated-ids](https://www.kaggle.com/datasets/indrajit147/ciciomt2024-processed-for-federated-ids) (version 1, public; all five files present, byte sizes identical to `data/processed/`, checked through Kaggle's API). Notebooks A and B check the SHA-256s.
 - `scripts/m1_prepare_data.py` documents how the Parquet is built from the merged CSV, whose SHA-256 is in the README. The merge of CIC's 72 CSVs into that file was done by hand and isn't scripted, which is a known gap.
 
 *Decided: the notebooks.*
