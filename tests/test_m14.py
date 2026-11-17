@@ -66,3 +66,15 @@ def test_h4c_paired_items_and_exact_mcnemar():
     assert (r["pairs"], r["llm_only_yes"], r["shap_only_yes"]) == (3, 1, 1) and r["diff"] == 0
     assert ACTION.search("Rate-limit the source") and ACTION.search("isolate the device")
     assert not ACTION.search("Further investigation is recommended; monitor Number")
+
+
+def test_m15_check_compare_tolerance_and_missing_cells():
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from m15_check import cells, compare
+    summ = {"summaries": [{"method": "e3", "slice": "csv_only", "window_avg_macro_f1": 0.9, "macro_f1_by_window": {"0": 1.0, "1": 0.8}},
+                          {"method": "e3", "slice": "all", "window_avg_macro_f1": 0.1, "macro_f1_by_window": {"0": 0.1}}]}
+    assert cells(summ, "e3") == {"window_avg": 0.9, "t0": 1.0, "t1": 0.8} and cells(summ, "e4") == {}
+    r = {x["cell"]: x["ok"] for x in compare({"window_avg": 0.9049, "t0": 0.994}, cells(summ, "e3"))}
+    assert r == {"window_avg": True, "t0": False, "t1": False}          # 0.0049 passes, 0.006 fails, a missing cell fails

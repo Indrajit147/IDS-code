@@ -1344,6 +1344,45 @@ Tier 1 is complete.
 - [ ] Figures/tables mapped to the IEEE IoT-J outline; privacy/threat-model section (D5)
 - **Acceptance:** a fresh environment reproduces the headline table within ±0.005 macro-F1. A different thread count alone already moves individual cells by up to 0.004 (measured in M4), so the check must not demand exact equality.
 
+**Design, fixed on 2026-11-17 before any M15 run.** The two choices marked *decided* were the user's, from options I proposed; the rest are mine unless marked as the proposal's.
+
+*What the proposal fixes:*
+- **Notebook A** (training + FL simulation): data prep, partitioning, time windows, client simulation, training loops, logging.
+- **Notebook B** (inference + LLM verification + XAI): frozen trained models, routed inference experiments, explanation generation, exported artifacts.
+- **Deterministic logging:** `experiment_config.json`, `client_partitions.json`, `window_definition.json`, `model_hparams.json`, and every LLM prompt and output as append-only JSONL with schema results, parse failures and retry counts.
+- **The IoT-J outline:** introduction; background; system and threat model; method; setup; results; discussion; reproducibility and artifacts; conclusion.
+
+*Decided: where a fresh run starts.*
+- The processed Parquet from M1 (four files plus `data_manifest.json` with SHA-256s) is published as a public Kaggle dataset, citing CIC (Dadkhah et al. 2024).
+- The user checks CIC's redistribution terms and does the upload; the repo holds the dataset card (`release/dataset/README.md`).
+- `scripts/m1_prepare_data.py` documents how the Parquet is built from the merged CSV, whose SHA-256 is in the README. The merge of CIC's 72 CSVs into that file was done by hand and isn't scripted, which is a known gap.
+
+*Decided: the notebooks.*
+- **Notebook A** (`notebooks/m15_notebook_a.ipynb`, CPU, one session, seed 42, 4 threads):
+  - **Steps:** M2 partition, M3 + M4 (E1, static), M6 (naïve, local + rehearsal), M7 `e3`, M9's K sweep and `e4_added` (E4), M13 (E7).
+  - **Time:** about 9.8 h. This is a sum of measured tier-1 and tier-2 run times (M3 75 min, M4 11, M6 157–198, M7 `e3` 65, K sweep 150, `e4_added` 83, M13 17), so it fits one 12 h session with about 2 h to spare.
+  - **Not included:** E2 (FedAvg/FedProx) and FedMD, which are baselines below E1 and would push A past one session; their own notebooks still run them.
+- **Notebook B** (`notebooks/m15_notebook_b.ipynb`, GPU T4, seed 42):
+  - **Steps:** M2, M10 (refit `e4_added`, save the window models, TreeSHAP), then M11 (refit, then Gemma 2 2B verification on 100 rows per client and window, 10 of them always-on, against M11's 500 and 50).
+  - **Time:** about 5 h, estimated.
+  - **Deviation from the proposal, recorded:** B retrains E4 instead of loading A's frozen models, as M10 and M11 always have. Each refit is checked against M9's committed scores, and M11 can't load saved models without new code.
+
+*The check:* `scripts/m15_check.py`.
+- **A:** the notebook runs untagged in a fresh clone, so its reports overwrite the seed-42 ones in that clone. The check compares each headline cell with the committed file (`git show HEAD:…`): CSV rows, window average and each window, for E1, static, naïve, local + rehearsal (M6 and M7), E3, E4 and E7. It passes if every difference is within ±0.005, and writes `reports/m15/full/CHECK_A.md`.
+- **B:** passes if both refits' `fit_check.json` are within ±0.005 of M9 in every window. The verifier's results on the smaller sample are reported, not tested.
+- **What it covers:** this checks seed 42, not the three-seed means. Tier 1 put the seed spread at about 0.0004 for E3 and E4, so one seed inside ±0.005 is strong evidence for the table, but not the table itself.
+
+*Released artifacts:* `scripts/m15_release.py` writes `release/`.
+- `experiment_config.json`: the resolved headline config, Kaggle environment, seed 42, 4 threads.
+- `client_partitions.json` and `window_definition.json`: from M2's full pool.
+- `model_hparams.json`: the config sections that set models and training (`models`, `incremental`, `distill`, `fedavg`, `schedule`, `drift`, `gate`, `llm`, `policy`, `explain`).
+- Every LLM log, gzipped (about 3 MB a seed): M11 seeds 42–44, the Mistral subset, M12.
+- `MANIFEST.json` with a SHA-256 for each file and the commit.
+
+*Paper artifacts (after the notebooks):*
+- **Tables and figures:** one script maps the existing `reports/m14/full/` outputs onto the outline's results sections.
+- **System and threat model, with the privacy analysis (D5):** drafted in `paper/threat_model.md`, covering what leaves a client (soft labels on D_pub, drift statistics, escalated evidence) and what an honest-but-curious server learns from it.
+
 ---
 
 ## Progress log

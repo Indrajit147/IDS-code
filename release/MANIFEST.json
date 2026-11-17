@@ -1,0 +1,52 @@
+{
+  "commit": "c4b9919",
+  "missing_logs": [
+    "m12/full/seed44/llm_log_llm.jsonl"
+  ],
+  "files": {
+    "client_partitions.json": {
+      "bytes": 2536,
+      "sha256": "1de2065e7905d23a1e8fb99656b5e7fdd6c29b8e735396b92928784dddd27516"
+    },
+    "dataset/SHA256SUMS": {
+      "bytes": 348,
+      "sha256": "58e00e182e20ab3110be90feaf53c3d334d14e67a3a0d409b0eb3a2c592d0c5b"
+    },
+    "experiment_config.json": {
+      "bytes": 4993,
+      "sha256": "122ca2880dc20720fbe0cf5813eb564d6be32c600614ff98bf5a8c34548f77c2"
+    },
+    "llm_logs/m11_gemma2-2b_seed42.jsonl.gz": {
+      "bytes": 3132954,
+      "sha256": "0f68c2ff5c462556a5c019dd702db9fcabc2ae4d87f5cb1f6bd457bc5e441fce"
+    },
+    "llm_logs/m11_gemma2-2b_seed43.jsonl.gz": {
+      "bytes": 3171065,
+      "sha256": "1a37837c6a5a4f10d5bdb5964363e5f4d2cc110c8a14f245627277aba6a2513f"
+    },
+    "llm_logs/m11_gemma2-2b_seed44.jsonl.gz": {
+      "bytes": 3285271,
+      "sha256": "285eb64224a1a36ce1e47f9a8a6cef3d686c1a218ddc56c6c3eea6f0400c8620"
+    },
+    "llm_logs/m11_mistral-7b_subset_seed42.jsonl.gz": {
+      "bytes": 2230666,
+      "sha256": "aafe07725683348b1360a8fdf8fce77f7c4a00ad34f5b631696c08098b29e12b"
+    },
+    "llm_logs/m12_gemma2-2b_seed42.jsonl.gz": {
+      "bytes": 12146,
+      "sha256": "a00aa3494d0bcb02b48525c961d567030bf9afb4291306632bc48923f6bb094c"
+    },
+    "llm_logs/m12_gemma2-2b_seed43.jsonl.gz": {
+      "bytes": 11878,
+      "sha256": "c6f20b1342df0f871019a577b4f8f44bbda06a0759645dc99f2995b1b82a06ab"
+    },
+    "model_hparams.json": {
+      "bytes": 2361,
+      "sha256": "1ae6085ed5fc9d512912c37caf05f32a15a601a56d87dec1a33d09171f7bef73"
+    },
+    "window_definition.json": {
+      "bytes": 3199,
+      "sha256": "682ece08613f8f2c662e2a40e6b8908e8dc740851e1f5ac028a9f05fe2c4889c"
+    }
+  }
+}

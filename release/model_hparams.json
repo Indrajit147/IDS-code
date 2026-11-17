@@ -1,0 +1,125 @@
+{
+  "models": {
+    "val_frac": 0.1,
+    "weight_cap": 50.0,
+    "early_stopping": 20,
+    "xgb": {
+      "n_estimators": 300,
+      "max_depth": 8,
+      "learning_rate": 0.1,
+      "subsample": 0.8,
+      "colsample_bytree": 0.8,
+      "max_bin": 256
+    },
+    "lgb": {
+      "n_estimators": 300,
+      "num_leaves": 63,
+      "max_depth": 10,
+      "learning_rate": 0.1,
+      "subsample": 0.8,
+      "subsample_freq": 1,
+      "colsample_bytree": 0.8,
+      "min_child_samples": 20
+    }
+  },
+  "incremental": {
+    "first_trees": 50,
+    "new_trees": 50,
+    "max_delta_step": 10.0,
+    "rehearsal_capacity": 2000,
+    "rehearsal_sweep": [
+      500,
+      8000
+    ]
+  },
+  "distill": {
+    "calibrator_l2": 0.0001,
+    "calibrator_max_iter": 200,
+    "calibrator_max_rows": 200000,
+    "digest_trees": 10
+  },
+  "fedavg": {
+    "hidden": [
+      128,
+      64
+    ],
+    "rounds_per_window": 50,
+    "patience": 5,
+    "local_epochs": 1,
+    "batch": 512,
+    "lr": 0.1,
+    "momentum": 0.9,
+    "mu_sweep": [
+      0.001,
+      0.01,
+      0.1,
+      1.0
+    ]
+  },
+  "schedule": {
+    "chunks": 10,
+    "reference_rows": 20000,
+    "k_sweep": [
+      10,
+      20,
+      30
+    ],
+    "mi_rows_per_class": 500,
+    "score_strength": [
+      0,
+      1,
+      2,
+      4,
+      8,
+      16
+    ],
+    "gate_val_rows": 20000,
+    "psi_flag_share": 0.1
+  },
+  "drift": {
+    "adwin_delta": 0.002,
+    "shift_bins": 10,
+    "shift_max_rows": 20000,
+    "psi_alert": 0.25
+  },
+  "gate": {
+    "tau_conf": 0.8,
+    "tau_disagree": 0.2,
+    "max_escalation_rate": 0.1,
+    "tune_tau_d": [
+      0.02,
+      0.05,
+      0.1,
+      0.15,
+      0.2,
+      0.3,
+      0.4,
+      0.5,
+      1.01
+    ],
+    "drift_signal": "disagreement",
+    "drift_hold_rows": 200
+  },
+  "llm": {
+    "backend": "stub",
+    "model_id": "google/gemma-2-2b-it",
+    "quantization": "4bit",
+    "compute_dtype": "float16",
+    "batch_size": 16,
+    "max_new_tokens": 256,
+    "max_retries": 2,
+    "rows_per_client": 500,
+    "always_on_rows": 50
+  },
+  "policy": {
+    "backend": "heuristic",
+    "max_retries": 2,
+    "evidence_rows": 5000,
+    "shap_rows": 200
+  },
+  "explain": {
+    "rows_per_client": 1000,
+    "top_k": 5,
+    "timing_rows": 100
+  }
+}
