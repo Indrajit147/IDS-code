@@ -70,12 +70,12 @@ Rules:
 | M6  | Incremental local learning + rehearsal buffer      | DA-FedDistill step 1          | ✅ Done (dev + full) | 2026-11-06 |
 | M7  | DA-FedDistill (federated distillation)             | E3, novelty claim B           | ✅ Done (dev + full); acceptance met on the full pool's window average only, two seeds | 2026-11-06 |
 | M8  | Neural FL baselines (FedAvg / FedProx MLP)         | E2, baselines                 | ✅ Done: dev 3 seeds, full pool 2 seeds at lr 0.03, chosen on full-pool validation rows | 2026-11-07 |
-| M9  | Drift-triggered updates, feature selection, adaptive threshold | E4, Methodology Step 5 | ✅ Done (dev + full, two seeds); `e4_added` carried forward (D11) | — |
+| M9  | Drift-triggered updates, feature selection, adaptive threshold | E4, Methodology Step 5 | ✅ Done (dev + full, two seeds); `e4_added` carried forward (D11) | 2026-11-08 |
 | M10 | SHAP explainability (local + global store)         | Novelty claim C               | ✅ Done (dev one seed, full pool two seeds) | 2026-11-08 |
-| M11 | Cloud LLM verifier (gated, JSON-constrained)       | E5, E6, novelty claim A       | ✅ Full pool: neither verifier helps. Gemma 2 2B (seeds 42, 43) relabels ddos as dos, D3 contains the damage; Mistral 7B (subset) agrees with the edge and fails the JSON contract on 19% | — |
-| M12 | LLM adaptation-policy agent (training decisions)   | "What changes through LLM reasoning" | ✅ Full pool, seeds 42 and 43: Gemma 2 2B delays every update and loses 0.10 window-average macro-F1 (0.8245 against E4's 0.9238); the heuristic ties E4 | — |
-| M13 | Federated GBDT baseline (stretch)                  | E7                            | ✅ Done: E7 within 0.008 of E1, 0.044 below E3; uplink 760 to 3,200 times E3's | — |
-| M14 | Full experiment matrix, ablations & sensitivity    | E1–E7, ablations, H1–H4       | ✅ Tiers 1–3 done (H1 vs static only; H1 vs naïve, H2, H3 not supported; E3 collapses under strong label skew, α 0.1) | — |
+| M11 | Cloud LLM verifier (gated, JSON-constrained)       | E5, E6, novelty claim A       | ✅ Full pool: neither verifier helps. Gemma 2 2B (seeds 42–44) relabels ddos as dos, D3 contains the damage; Mistral 7B (subset) agrees with the edge and fails the JSON contract on 19% | 2026-11-10 |
+| M12 | LLM adaptation-policy agent (training decisions)   | "What changes through LLM reasoning" | ✅ Full pool, seeds 42–44: Gemma 2 2B delays every update and loses 0.10 window-average macro-F1 (0.8252 against E4's 0.9241); the heuristic ties E4 | 2026-11-17 |
+| M13 | Federated GBDT baseline (stretch)                  | E7                            | ✅ Done: E7 within 0.008 of E1, 0.044 below E3; uplink 760 to 3,200 times E3's | 2026-11-10 |
+| M14 | Full experiment matrix, ablations & sensitivity    | E1–E7, ablations, H1–H4       | ✅ Tiers 1–3 done (H1 vs static only; H1 vs naïve, H2, H3 not supported; E3 collapses under strong label skew, α 0.1) | 2026-11-17 |
 | M15 | Reproducibility package & paper artifacts          | Notebook A/B, IoT-J outline   | 🟨 Built; Notebooks A/B not yet run on Kaggle | — |
 
 Legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked
@@ -933,7 +933,7 @@ SHAP is computed only for rows sent to the LLM.
 - [x] Policy JSON: `update_urgency`, `training_style`, `preserve_old_behavior`, `feature_focus_groups`, `buffer_selection`, `update_scope`, plus `reasons` (`src/ids/llm/policy.py`)
 - [x] Each field mapped to a training knob, applied deterministically (`scripts/m12_policy.py`)
 - [x] Inputs: drift registry, SHAP drift, per-class metrics; each decision is logged with its evidence (`decisions_<arm>.jsonl`), and every prompt and reply too
-- [x] Ablation: LLM policy vs a fixed heuristic policy vs no policy, full pool on Kaggle (seeds 42 and 43)
+- [x] Ablation: LLM policy vs a fixed heuristic policy vs no policy, full pool on Kaggle (seeds 42, 43 and 44)
 - **Note:** the main proposal says the LLM is "not used for continuous learning", while the explanation document gives it control over training decisions. The paper must state clearly that the LLM controls the training *policy* only.
 - **Acceptance:** the policy is applied deterministically, and the ablation results are recorded.
 
@@ -1031,9 +1031,27 @@ The multipliers and the four feature groups are my assumptions: the document giv
 - **Gemma behaves as at seed 42.** All 75 decisions are again urgency low, conservative, buffer preserved, uniform selection and partial scope; 65 of 75 focus on rate_timing and packet_size. Valid after retries at all 75 (0.80 first try), 10.1 s per decision. A new class is present at 74 of 75 decisions. At t2 4 of 15 clients update and at t4 1, and macro-F1 there is 0.66 and 0.75. The reasons again deny the evidence ("No significant feature shift" 13, "Error rate on new rows is low, no significant drift." 12).
 - **The heuristic is again level with E4:** window average 0.0007 below, per window within 0.0031, the same order as rerun noise. Its class forgetting is again a little lower (0.0321 against 0.0328).
 
-**Two seeds (42 and 43), mean window-average macro-F1:** none 0.9238, heuristic 0.9235, llm 0.8245 (each ± at most 0.0026, half the gap between seeds). Final window: 0.8905, 0.8897, 0.7473.
+**Results, full pool, seed 44 (2026-11-17, Kaggle, commit aaa734b, clean; CPU at 4 threads, Gemma 2 2B instruct 4-bit on a T4).** [`reports/m12/full/seed44/POLICY.md`](reports/m12/full/seed44/POLICY.md)
 
-- **Result:** with Gemma 2 2B, LLM control of training decisions costs about 0.10 window-average and 0.14 final-window macro-F1 against E4, in both seeds, because it delays every update. A fixed heuristic on the same evidence neither helps nor hurts. Two seeds with the partition fixed give only a rough spread, and a larger policy model isn't tested.
+| arm | window avg | avg excl. t0 | final | next-window avg | class forgetting |
+|---|---:|---:|---:|---:|---:|
+| none (E4) | 0.9245 | 0.9095 | 0.8939 | 0.6663 | 0.0296 |
+| heuristic | 0.9232 | 0.9080 | 0.8885 | 0.6626 | 0.0283 |
+| llm (Gemma 2 2B) | 0.8265 | 0.7920 | 0.7840 | 0.5971 | -0.0152 |
+
+| arm | t0 | t1 | t2 | t3 | t4 | t5 | clients updated at t1–t5 |
+|---|---:|---:|---:|---:|---:|---:|---|
+| none | 0.9993 | 0.9028 | 0.9183 | 0.9296 | 0.9031 | 0.8939 | 15, 15, 15, 15, 15 |
+| heuristic | 0.9993 | 0.9056 | 0.9150 | 0.9269 | 0.9040 | 0.8885 | 15, 15, 15, 15, 5 |
+| llm | 0.9993 | 0.8854 | 0.6210 | 0.9213 | 0.7483 | 0.7840 | 15, 3, 14, 1, 7 |
+
+- **Check:** the none arm is within 0.0008 macro-F1 of M9's `e4_added` in every window.
+- **Gemma behaves as at seeds 42 and 43.** All 75 decisions are urgency low, conservative, buffer preserved, uniform selection and partial scope; 65 of 75 focus on rate_timing and packet_size. Valid after retries at all 75 (0.80 first try), 10.5 s per decision. A new class is present at 74 of 75 decisions. At t2 3 of 15 clients update and at t4 1, and macro-F1 there is 0.62 and 0.75. The reasons again deny the evidence ("No significant feature shift or SHAP drift." 14, "New rows have low error rate and good F1 score on validation." 12).
+- **The heuristic is again level with E4:** window average 0.0013 below. The llm arm's class forgetting is negative at this seed (−0.0152); the cause isn't checked, and with its lower per-window scores it isn't a sign of better retention.
+
+**Three seeds (42, 43 and 44), mean ± std window-average macro-F1:** none 0.9241 ± 0.0005, heuristic 0.9234 ± 0.0006, llm 0.8252 ± 0.0029. Final window: 0.8916, 0.8893, 0.7595.
+
+- **Result:** with Gemma 2 2B, LLM control of training decisions costs about 0.10 window-average and 0.13 final-window macro-F1 against E4, in all three seeds, because it delays every update. A fixed heuristic on the same evidence neither helps nor hurts. Three seeds with the partition fixed give a small spread, and a larger policy model isn't tested.
 
 ### M13: Federated GBDT baseline (stretch)
 **Goal:** E7, a "true" federated boosting reference.
@@ -1102,7 +1120,7 @@ The multipliers and the four feature groups are my assumptions: the document giv
 | E4 (`e4_added`, D11) and M9's other passes | M9 | 42, 43 | 44 |
 | E5 gated, E6 always-on (Gemma 2 2B) | M11 | 42, 43 | 44 (GPU) |
 | E7 federated GBDT | M13 | 42 | 43, 44 |
-| policy agent (not in E1–E7) | M12 | 42, 43 | none in tier 1; 44 in tier 3 |
+| policy agent (not in E1–E7) | M12 | 42, 43, 44 | none in tier 1; 44 in tier 3 (done 2026-11-17) |
 
 *The seed and what it leaves fixed:* the seed changes model training only. The partition (M2) was built once, at seed 42, and every seed reuses it, so seed spread is training noise and not client-assignment noise. Partition noise is tested once, by a reseeded partition in tier 2. The paper must say so.
 
@@ -1248,9 +1266,9 @@ Tier 1 is complete.
   - Under 1% of replies have every reason grounded. Gemma nearly always adds reasons that cite only a probability or the recent class share, which the rule counts as not grounded.
   - M11's weak check (every reason names a feature or class) gave 0.97, so it overstated grounding by more than half.
   - The direction words are matched anywhere in a reason, so the rule is crude. A hand check of 12 reasons agreed with every label it gave.
-- **H4 (b), schema-valid rate.** Verifier: 0.554 / 0.560 / 0.560 on the first try, 0.9999 after retries. Policy agent (M12, seeds 42 and 43): 0.80 on the first try, 1.00 after retries.
+- **H4 (b), schema-valid rate.** Verifier: 0.554 / 0.560 / 0.560 on the first try, 0.9999 after retries. Policy agent (M12, seeds 42–44): 0.80 on the first try, 1.00 after retries.
 - **Policy reasons (weak check only).** Explicit contradictions of two yes/no facts (new classes, ADWIN fired): 0 of 212 and 1 of 210 reasons, a lower bound. But Gemma chose urgency low in every decision where a new class was present (73 / 73 and 74 / 74), so its decisions ignore the evidence its reasons cite.
-- **Not done: M12 seed 44.** It needs Kaggle GPU quota and isn't needed for E1–E7.
+- **M12 seed 44, done 2026-11-17** (see M12): the same as seeds 42 and 43.
 
 *H4 (c) for the record (2026-11-17; the user asked for it, to decide later whether the paper uses it).* [`scripts/m14_h4c.py`](scripts/m14_h4c.py), output in [`reports/m14/full/h4c/`](reports/m14/full/h4c/H4C.md). **Not preregistered:** the rubric below was fixed after M11's reasons had been read, and M11's prompt never asked Gemma for operator actions, which tilts the action item against Gemma. Both are disclosed.
 - **Sample.** 100 rows of M11 seed 42 with a valid Gemma reply, 50 own-window and 50 boundary, fixed seed. Each row gives two texts: a SHAP-only template (the edge's label and probability, then the top-5 features with value and SHAP sign) and Gemma's text (label, confidence, reasons, features to watch, safety notes). The 200 texts are shuffled into `sheet.csv` with the evidence Gemma saw; `key.csv` holds the arm. Pairs and order are hidden; the arm isn't, because Gemma's prose is recognizable.
@@ -1340,7 +1358,7 @@ Tier 1 is complete.
 ### M15: Reproducibility package & paper artifacts
 **Goal:** a submission-ready artifact.
 - [ ] Kaggle Notebook A (prep + FL simulation) and Notebook B (inference + LLM + XAI)
-- [x] Released configs: `experiment_config.json`, `client_partitions.json`, `window_definition.json`, `model_hparams.json`, LLM JSONL logs (`release/`; M12 seed 44's log is added when that run is back)
+- [x] Released configs: `experiment_config.json`, `client_partitions.json`, `window_definition.json`, `model_hparams.json`, LLM JSONL logs (`release/`)
 - [x] Figures/tables mapped to the IEEE IoT-J outline (`scripts/m15_paper.py`, `paper/ARTIFACTS.md`); privacy/threat-model section (D5) drafted in `paper/threat_model.md`
 - **Acceptance:** a fresh environment reproduces the headline table within ±0.005 macro-F1. A different thread count alone already moves individual cells by up to 0.004 (measured in M4), so the check must not demand exact equality.
 
@@ -1422,6 +1440,7 @@ Tier 1 is complete.
 | 2026-11-15 | M14 design | Design fixed in the README before any run: three tiers (seed 44 and ablations on `e4_added`; ten sensitivity variants at one seed; frontier and H4 from stored logs), client bootstrap with Holm correction and a 0.005 size floor, one report script. H4's rubric (c) dropped because it wasn't fixed before M11's outputs were read. |
 | 2026-11-15 | M14 part A | Seeds 42, 43 and 44 on Kaggle CPU at `3829073`, clean, with per-client counts. Reruns match the published M4 and M8 exactly. M3, M6 and M7 move by at most 0.0008 in window average, within thread noise. Three seeds: E3 0.9256 ± 0.0004 against local-only 0.9207 ± 0.0004, ahead in window average and behind at t5 in every seed. |
 | 2026-11-15 | M14 part B | M9 with the E4 ablations and M13, seeds 42, 43 and 44, Kaggle CPU at `83de1b9`. E4 (`e4_added`) 0.9241 ± 0.0004, 0.0015 below E3. No ablation (no ADWIN trigger, all features, no rehearsal) moves window average by more than 0.0014; the fixed schedule without the trigger is ahead of E4 in every seed. Plain-ADWIN `e4` at seed 42 moved 0.8315 → 0.8418 on rerun (cause not traced). E7 0.8814 in all three seeds. |
+| 2026-11-17 | M12 seed 44 | Kaggle T4 at `aaa734b`, clean: none 0.9245 (within 0.0008 of M9's E4), heuristic 0.9232, llm 0.8265; Gemma again picks urgency low at all 75 decisions. Three seeds: none 0.9241 ± 0.0005, heuristic 0.9234 ± 0.0006, llm 0.8252 ± 0.0029. M14 tier 3 (H4 b), the release logs and the paper tables now include it. |
 | 2026-11-17 | M15 🟨 (built) | `release/` (configs, partitions, gzipped LLM logs, SHA256SUMS, MANIFEST), `scripts/m15_check.py`, Notebooks A and B, `scripts/m15_paper.py` (seven tables, two figures, outline map), `paper/threat_model.md`. CIC's terms allow redistribution with citation; processed data published as a public Kaggle dataset. Dev rehearsal of Notebook A: M2–M9 pass (largest difference 0.0008, E1); M13 not rehearsed locally (out of memory). Notebooks A and B not yet run on Kaggle. |
 | 2026-11-17 | M14 H4 (c) for the record | `scripts/m14_h4c.py`: blinded 200-text sheet (100 rows of M11 seed 42, SHAP-only template vs Gemma's text), rubric fixed now and disclosed as not preregistered. Automatic items: label correct 0.70 SHAP-only vs 0.45 Gemma (McNemar p = 0.001); no Gemma reply names a concrete operator action (0 of 14,066). Human scoring pending. |
 | 2026-11-17 | M14 ✅ (tier 2) | Ten sensitivity variants on Kaggle CPU at seed 42 and `57cfc55`, clean, about 6.5 h each; counts reproduce every stored window average. E3's gain over local-only is never significant on the positive side. Under α 0.1 E3 collapses (0.709 against local 0.957, worse on 14 of 15 clients), the same failure as benign-only D_pub. The reseeded partition moves E3 by 0.010, 25× the seed spread. The official split lowers every method by 0.03–0.05. IAT lifts all methods to about 0.99 (D6). E4 never beats E3. |
