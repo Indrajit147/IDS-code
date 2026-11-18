@@ -1,4 +1,4 @@
-# Data (too large / licensed separately) — see README "Dataset facts" and "External data"
+# Data (too large / licensed separately) — see README "Data"
 /data/
 *.csv
 *.parquet
@@ -10,6 +10,12 @@
 
 # Unpublished proposal documents
 *.docx
+
+# Paper draft (kept local; files already tracked under paper/ stay tracked)
+/paper/
+
+# Full project log (milestone diaries, decisions, progress log), kept local
+/README_LOCAL.md
 
 # Python
 __pycache__/

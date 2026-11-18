@@ -1,1464 +1,228 @@
-# LLM-Assisted Drift-Adaptive Incremental Federated IDS for IoT/IoMT
+# Drift-Adaptive Federated Intrusion Detection for IoMT with LLM Assistance
 
-> Edge tree-ensemble detection (XGBoost + LightGBM), drift-adaptive federated distillation (DA-FedDistill),
-> SHAP explainability, and inference-time cloud LLM verification, evaluated on CICIoMT2024.
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+![Python](https://img.shields.io/badge/python-%E2%89%A53.10-blue.svg)
+[![Dataset](https://img.shields.io/badge/Kaggle-processed%20CICIoMT2024-20BEFF.svg)](https://www.kaggle.com/datasets/indrajit147/ciciomt2024-processed-for-federated-ids)
 
-Source documents (kept locally and not in this public repo, because the proposal is unpublished):
-- `LLM-Assisted Drift-Adaptive Incremental Federated Intrusion Detection in IoT_ Edge Ensemble Learning.docx`: full proposal (experiment matrix E1–E7, baselines, ablations, metrics, hypotheses).
-- `Proposal explanation.docx`: plain-language walkthrough, plus the training-time role of the LLM as an "adaptation-policy" agent.
+This repository contains the implementation, experiment pipeline, results and reproduction package for a federated intrusion detection system (IDS) for Internet of Medical Things (IoMT) networks under concept drift. The system combines:
 
-The parts later milestones depend on are copied into this README; see *Hypotheses* and *Experiment matrix*.
+- a gateway-side **edge ensemble** (XGBoost + LightGBM, fused and temperature-calibrated);
+- **DA-FedDistill**, a drift-adaptive federated distillation scheme in which clients share soft labels on a small public set instead of model weights;
+- **ADWIN-triggered incremental updates** with mutual-information feature focus and a drift-adaptive uncertainty gate;
+- **TreeSHAP** explanations for every escalated flow;
+- two **LLM roles**: an inference-time verifier for uncertain flows and a training-time adaptation-policy agent.
 
-This README is the project's living plan. **It is updated after every milestone**: the status table, the milestone's checklist, its results, and the progress log. Each update is also pushed to [GitHub](https://github.com/Indrajit147/IDS-code).
+Every component is evaluated against centralized, local, weight-averaging, distillation and federated-boosting baselines under a controlled class-incremental drift protocol on [CICIoMT2024](https://www.unb.ca/cic/datasets/iomt-dataset-2024.html), with 15 non-IID clients, six time windows, three seeds, paired client-bootstrap tests and Holm correction.
 
-## Quickstart
+## Key findings
 
-```bash
-# Install. Use `pip install -e ".[dev]"` on a fresh machine; --no-deps keeps an existing stack (Kaggle) intact.
-pip install -e ".[dev]"
-python -m pytest -q               # unit tests (no data needed)
-python scripts/m0_smoke_run.py    # writes results/runs/<timestamp>_m0_smoke/ and reports which data it can find
-python scripts/m0_smoke_run.py --set seed=7 gate.tau_conf=0.7   # dotted overrides
+- **Federated distillation is the strongest collaborative method** (E3, window-average macro-F1 0.9256), ahead of centralized retraining (0.8897), FedAvg/FedProx on an MLP (0.8415/0.8414), FedMD (0.8873) and federated GBDT (0.8814). E7, the federated GBDT baseline, sends 760 to 3,200 times more uplink data than E3.
+- **Its gain over purely local incremental learning is not significant.** E3 minus naïve incremental is +0.0044 (95% interval −0.0024 to +0.0096).
+- **ADWIN-triggered updates do not shorten recovery or reduce variance** across windows (H2 not supported).
+- **The gated LLM verifier does not reduce false positives.** Gemma 2 2B never changes a benign decision, and macro-F1 at drift boundaries is 0.6726 against 0.6737 for the edge alone, at about 85 LLM calls per 1,000 flows.
+- **The LLM policy agent hurts.** Gemma 2 2B delays every update and loses about 0.10 macro-F1 (0.8252 against 0.9241), while a fixed heuristic on the same evidence ties the default (0.9234).
+- **Collaboration needs label overlap.** Under strong label skew (Dirichlet α = 0.1, seed 42), E3 drops to 0.709, while local learning reaches 0.957. With a benign-only public set, E3 falls to 0.567.
+- **Fresh Kaggle environments reproduce the results.** Rerunning from the public dataset matches the committed results within 0.0014 macro-F1 (training) and 0.0018 (explanation and LLM pipeline).
 
-# Pipeline. Needs the raw data (see Dataset facts and External data); --pool dev runs on the stratified sample.
-python scripts/m1_prepare_data.py        # raw CSV + Zenodo -> data/processed/
-python scripts/m1_eda.py                 # reports/m1/
-python scripts/m2_build_partitions.py    # data/splits/, reports/m2/
-python scripts/m3_baselines.py --pool dev        # E1 + static + BLE; reports/m3/dev/
-python scripts/m3_shortcut_checks.py --pool dev  # IAT, Number/Weight, profiling-row checks
-python scripts/m4_evaluate.py --pool dev         # regression check + standard report; reports/m4/dev/
-python scripts/m5_drift.py --pool dev             # ADWIN, shift, gate; reports/m5/dev/
-python scripts/m6_incremental.py --pool dev --set resources.n_jobs=4   # reports/m6/dev/; --resume continues after a stop
-python scripts/m7_distill.py --pool dev --set resources.n_jobs=4       # E3 + FedMD; reports/m7/dev/; --resume, --tag seed43; --only e3|fedmd, --report
-python scripts/m7_seeds.py --pool dev                                  # reports/m7/dev/SEEDS.md
-python scripts/m8_fedavg.py --pool dev --set resources.n_jobs=4        # E2, FedAvg + FedProx; reports/m8/dev/; --resume, --tag seed43; --only NAME, --report
-python scripts/m7_seeds.py --pool dev --milestone m8                   # reports/m8/dev/SEEDS.md
-python scripts/m8_lr_sweep.py --pool dev --lrs 0.03 0.1 --seeds 42 43   # choose lr on validation rows; reports/m8/<pool>/LR_SWEEP.csv
-python scripts/m9_e4.py --pool dev --set resources.n_jobs=4 --only NAME --resume   # E4, one pass per process (see the file's docstring); then --report; reports/m9/<pool>/
-python scripts/m10_shap.py --pool dev --set resources.n_jobs=4               # TreeSHAP of e4_added (D11); --only fit|shap; reports/m10/<pool>/
-python scripts/m11_verify.py --pool dev --set resources.n_jobs=4             # LLM verifier (stub locally; llm.backend=hf on a GPU); --only fit|llm; reports/m11/<pool>/
-python scripts/m11_subset.py --env kaggle --set llm.backend=hf llm.model_id=<path>  # second verifier on a subset of seed 42's M11 rows; reports/m11/full/mistral/
-python scripts/m12_policy.py --pool dev --set resources.n_jobs=4             # policy agent: none, heuristic, llm arms (policy.backend=hf on a GPU); --only ARM, --report; reports/m12/<pool>/
-```
+## Results
 
-On Kaggle, open `notebooks/kaggle_bootstrap.ipynb`. It clones this repo, installs it with `--no-deps`, and auto-discovers the attached data under `/kaggle/input`. The environment is detected automatically and can be forced with `IDS_ENV=local|kaggle`. The Kaggle dataset needs only the five files of `data/processed/`: `data_manifest.json`, `wifi_mqtt_full.parquet`, `wifi_mqtt_dev.parquet`, `wifi_profiling.parquet` and `ble.parquet`.
+Six-class macro-F1 on held-out rows, averaged over windows t0–t5. Values are the mean ± std over seeds 42–44, with a 95% client-bootstrap interval (10,000 draws). Benign device-profiling captures are kept for training but excluded from scoring, because they are trivially separable from the CSV benign rows. Source: [`reports/m14/full/REPORT.md`](reports/m14/full/REPORT.md).
 
-## Compute plan: hybrid local + Kaggle
+| Method | Collaboration | Window avg | 95% interval | Final window (t5) |
+|---|---|---:|---:|---:|
+| Static (trained on t0 only) | centralized | 0.3957 ± 0.0058 | 0.3611–0.4225 | 0.1740 ± 0.0087 |
+| E1, retrained per window | centralized | 0.8897 ± 0.0001 | 0.8720–0.9020 | 0.8669 ± 0.0004 |
+| Naïve incremental | none | 0.9212 ± 0.0001 | 0.9024–0.9337 | 0.8978 ± 0.0004 |
+| Local + rehearsal | none | 0.9208 ± 0.0003 | 0.9018–0.9332 | 0.8967 ± 0.0006 |
+| E2 FedAvg (MLP) | weight averaging | 0.8415 ± 0.0039 | 0.8194–0.8583 | 0.7811 ± 0.0014 |
+| E2 FedProx (MLP) | weight averaging | 0.8414 ± 0.0025 | 0.8191–0.8585 | 0.7800 ± 0.0023 |
+| FedMD | distillation | 0.8873 ± 0.0002 | 0.8630–0.9053 | 0.8603 ± 0.0003 |
+| E7 federated GBDT | histogram aggregation | 0.8814 ± 0.0000 | 0.8630–0.8940 | 0.8514 ± 0.0009 |
+| **E3 DA-FedDistill** | distillation | **0.9256 ± 0.0004** | 0.9108–0.9331 | 0.8947 ± 0.0010 |
+| E3 + client guard † | distillation | 0.9285 ± 0.0005 | 0.9133–0.9362 | 0.9004 ± 0.0007 |
+| **E4** (E3 + ADWIN trigger, MI top-K) † | distillation | **0.9241 ± 0.0004** | 0.9086–0.9319 | 0.8920 ± 0.0020 |
+| E4, ADWIN replaces the schedule | distillation | 0.8538 ± 0.0219 | 0.8316–0.8648 | 0.8378 ± 0.0157 |
 
-| Where | Used for | Config profile |
-|---|---|---|
-| **Local** (CPU, 7.7 GB RAM) | Writing and debugging code for M0–M10 on the stratified dev sample; unit tests | `configs/env/local.yaml` |
-| **Kaggle** (~29 GB RAM, T4/P100 GPU) | Full-data runs, multi-seed experiment matrix (M14), LLM verifier/policy (M11–M12), Notebooks A/B (M15) | `configs/env/kaggle.yaml` |
+† Chosen after earlier results were seen. They are reported as named variants, never in place of the pre-specified method.
 
-Rules:
-- Code lives in this repo only. Kaggle notebooks are thin wrappers that `git pull` and call `scripts/`.
-- Data is never committed. On Kaggle it is a private Kaggle dataset; locally it lives in `data/`.
-- Kaggle results are written to `/kaggle/working/results/runs/` and are downloaded or published as Kaggle dataset versions.
+**Hypothesis tests.** A difference counts as a result only when its 95% interval excludes 0, its Holm-adjusted p (five tests) is below 0.05 and, for macro-F1, its size is at least 0.005.
 
----
+| | Comparison | Difference [95% interval] | Holm p | Supported |
+|---|---|---|---:|:---:|
+| H1a | E3 − naïve incremental, window-avg macro-F1 | +0.0044 [−0.0024, +0.0096] | 0.65 | no |
+| H1b | E3 − static, window-avg macro-F1 | +0.5299 [+0.5044, +0.5578] | < 0.0001 | yes |
+| H2a | E4 − E3, variance of macro-F1 over t1–t5 | +0.00004 [+0.000004, +0.00012] | 0.12 | no |
+| H2b | E4 − E3, time-to-recover (windows) | 0.0 [0.0, 0.4] | 1.00 | no |
+| H3 | E5 gated LLM − E4 edge, benign false-positive rate at drift boundaries | 0.0 [0.0, 0.0] | 1.00 | no |
 
-## Milestone status
+H4, on explanation quality, is exploratory:
+- 0.36 of the verifier's reasons are grounded in the flow's SHAP evidence by a strict rule.
+- 0.56 of its replies meet the JSON schema on the first attempt, and 0.9999 after retries.
 
-| #   | Milestone                                          | Proposal mapping              | Status      | Completed |
-|-----|----------------------------------------------------|-------------------------------|-------------|-----------|
-| M0  | Project scaffolding & environment                  | Reproducibility design        | ✅ Done | 2026-11-04 |
-| M1  | Data ingestion, cleaning & label harmonization     | Dataset preparation 1–4       | ✅ Done | 2026-11-04 |
-| M2  | Synthetic drift timeline, clients & D_pub          | Time windows, client sim, D_pub | ✅ Done | 2026-11-04 |
-| M3  | Edge ensemble + centralized/static baselines       | Edge model, E1, static baseline | ✅ Done (dev + full) | 2026-11-04 |
-| M4  | Evaluation harness & metrics                       | Evaluation metrics            | ✅ Done (dev + full) | 2026-11-04 |
-| M5  | Drift detection & uncertainty gate                 | ADWIN, PSI/KL/W, gate τc/τd   | ✅ Done (dev + full), acceptance partly met | 2026-11-04 |
-| M6  | Incremental local learning + rehearsal buffer      | DA-FedDistill step 1          | ✅ Done (dev + full) | 2026-11-06 |
-| M7  | DA-FedDistill (federated distillation)             | E3, novelty claim B           | ✅ Done (dev + full); acceptance met on the full pool's window average only, two seeds | 2026-11-06 |
-| M8  | Neural FL baselines (FedAvg / FedProx MLP)         | E2, baselines                 | ✅ Done: dev 3 seeds, full pool 2 seeds at lr 0.03, chosen on full-pool validation rows | 2026-11-07 |
-| M9  | Drift-triggered updates, feature selection, adaptive threshold | E4, Methodology Step 5 | ✅ Done (dev + full, two seeds); `e4_added` carried forward (D11) | 2026-11-08 |
-| M10 | SHAP explainability (local + global store)         | Novelty claim C               | ✅ Done (dev one seed, full pool two seeds) | 2026-11-08 |
-| M11 | Cloud LLM verifier (gated, JSON-constrained)       | E5, E6, novelty claim A       | ✅ Full pool: neither verifier helps. Gemma 2 2B (seeds 42–44) relabels ddos as dos, D3 contains the damage; Mistral 7B (subset) agrees with the edge and fails the JSON contract on 19% | 2026-11-10 |
-| M12 | LLM adaptation-policy agent (training decisions)   | "What changes through LLM reasoning" | ✅ Full pool, seeds 42–44: Gemma 2 2B delays every update and loses 0.10 window-average macro-F1 (0.8252 against E4's 0.9241); the heuristic ties E4 | 2026-11-17 |
-| M13 | Federated GBDT baseline (stretch)                  | E7                            | ✅ Done: E7 within 0.008 of E1, 0.044 below E3; uplink 760 to 3,200 times E3's | 2026-11-10 |
-| M14 | Full experiment matrix, ablations & sensitivity    | E1–E7, ablations, H1–H4       | ✅ Tiers 1–3 done (H1 vs static only; H1 vs naïve, H2, H3 not supported; E3 collapses under strong label skew, α 0.1) | 2026-11-17 |
-| M15 | Reproducibility package & paper artifacts          | Notebook A/B, IoT-J outline   | ✅ Done: Notebook A reproduces the headline (largest difference 0.0014) and Notebook B both E4 refits (0.0018), fresh Kaggle clones from the public dataset | 2026-11-18 |
+Ablations, sensitivity runs (client count, label skew, window order, `IAT`, official split) and per-window results are in [`reports/m14/full/`](reports/m14/full/).
 
-Legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked
-
----
-
-## Architecture
+## System architecture
 
 ```mermaid
 flowchart LR
-  subgraph Edge["Edge client i (IoMT gateway)"]
+  subgraph Edge["Edge client (IoMT gateway)"]
     A[Flow features x] --> B[XGBoost]
     A --> C[LightGBM]
     B --> D[Fusion + calibration]
     C --> D
-    D --> E{conf < τc OR disagree > τd OR drift?}
-    D --> S1[Local SHAP]
+    D --> E{"conf < τc or disagreement > τd or drift?"}
+    D --> S1[Local TreeSHAP]
   end
-  subgraph Cloud["Cloud / coordinator"]
+  subgraph Cloud["Cloud coordinator"]
     F[Drift monitor + window registry]
-    G[Global distillation / calibrator]
-    H[LLM verifier - inference only]
+    G[DA-FedDistill calibrator]
+    H[LLM verifier, inference only]
     P[LLM adaptation-policy agent]
-    S2[Global SHAP + explanation store]
-    J[Governance store: prompts, JSONL, seeds, configs]
+    S2[Explanation store]
+    J[Audit log: prompts, JSONL, seeds, configs]
   end
   E -- confident --> K[Edge decision + SHAP]
-  E -- escalate: top-k feats, SHAP, probs --> H
-  H --> L[Verified label + rationale JSON]
-  Edge -- soft labels on D_pub + drift stats --> G
-  G -- calibration weights / thresholds --> Edge
-  F -- drift score, for an adaptive threshold (M9) --> Edge
+  E -- "escalate: probabilities, top-5 SHAP" --> H
+  H --> L[Verified label + JSON rationale]
+  Edge -- "soft labels on D_pub, drift statistics" --> G
+  G -- "calibrator weights, thresholds" --> Edge
+  F -- "drift score, adaptive gate" --> Edge
   F <--> G
   F --> P
   S2 --> P
-  P -- next-window training policy JSON --> Edge
+  P -- "next-window training policy (JSON)" --> Edge
   H --> S2
   J <--> H
   J <--> P
 ```
 
-Three loops: the **inference loop** (edge to cloud escalation), the **adaptation loop** (incremental local training plus DA-FedDistill per window), and the **governance loop** (SHAP, LLM JSON outputs, seeds and configs logged append-only).
+The system has three loops:
+- **Inference loop.** The gateway escalates uncertain flows to the cloud verifier.
+- **Adaptation loop.** Clients learn incrementally each window, and DA-FedDistill aggregates them.
+- **Governance loop.** SHAP attributions, LLM outputs, seeds and configurations are logged append-only.
 
----
+The LLM is never trained. Its label replaces the edge's only when it asks to override, the two boosters disagree and a drift flag is on.
 
-## Dataset facts (measured from `data/raw/ciciomt2024_full_8p7m.csv`)
+## Experimental protocol
 
-Source file: `ciciomt2024_full_8p7m.csv`, SHA-256 `f7cb6fe30c4e4f0cb415a5e888f9bfcc7a652189a094447c72b8428b6b8f0eb6`. It was **merged by the project author from the CICIoMT2024 Wi-Fi/MQTT attack CSV files**, downloaded from the Canadian Institute for Cybersecurity ([dataset page](https://www.unb.ca/cic/datasets/iomt-dataset-2024.html); Dadkhah et al., *Internet of Things* 28, 2024, DOI [10.1016/j.iot.2024.101351](https://doi.org/10.1016/j.iot.2024.101351)).
+- **Data.** 8,775,013 Wi-Fi/MQTT flow records of CICIoMT2024 in six categories: Benign, DDoS, DoS, MQTT, Recon and Spoofing. Bluetooth (BLE) records and per-device benign profiling captures come from a published derivative ([Zenodo 19452870](https://zenodo.org/records/19452870)).
+- **Features.** Models use 43 of the 45 flow features. The constant column `Drate` is dropped, and so is `IAT`, which behaves as a capture timestamp: alone it reaches 0.83 macro-F1, and with it every method scores about 0.99.
+- **Drift timeline.** Six windows introduce attack categories in turn: DoS (t0), DDoS (t1), Recon (t2), MQTT (t3), Spoofing (t4) and the remaining Recon classes (t5). Five clients also receive held-back device populations at t5.
+- **Clients.** There are 15 non-IID clients, with Dirichlet α = 0.5 label skew and device-based benign traffic; 20% of rows are held out for testing.
+- **Public set D_pub.** 90,429 unlabelled rows, used only for distillation: 5,000 benign rows plus 1% of each attack category.
+- **Metric.** Macro-F1 over the classes present, computed on each window's own test rows with the newest model and averaged over t0–t5. The final window, class forgetting, time-to-recover, benign false-positive rate, LLM calls per 1,000 flows and communication cost are reported alongside.
+- **Statistics.** Paired client bootstrap (10,000 draws, the same client draw for every seed and method), with Holm correction over the five primary tests.
+- **LLMs.** Gemma 2 2B Instruct (4-bit NF4 on one T4 GPU, greedy decoding, JSON schema with up to two retries) on all three seeds; Mistral 7B Instruct v0.2 on a subset of seed 42.
 
-Cross-check (2026-11-04), against the independent [Zenodo derivative](https://zenodo.org/records/19452870):
-- **Row count:** 8,775,013, the exact number of flow records that record gives for the raw dataset.
-- **Features:** every CSV row is in Zenodo's train + test tables and every such Zenodo row is in the CSV, compared on all 45 features by row hash at full float64 precision. Both hold the same 8,767,634 unique rows.
-- **Labels:** the 19 CSV labels map one-to-one onto Zenodo's labels, with no disagreement on any row.
-- **Coverage and order:** all 72 source files are represented. The CSV is one block for the official train split (19 classes; 7.16M rows) followed by one for the official test split (19 classes; 1.61M rows).
-
-The merged file wasn't compared directly with the files as CIC distributes them. This check shows agreement with a second, independently published copy. The merge also dropped the official train/test split, though it can be recovered from the row order. M2 re-splits at random instead; M14 tests the official split as a sensitivity run.
-
-- **8,775,013 rows × 47 columns**: 45 numeric flow features plus `Sub_Attack` and `Major_Label`.
-- **19 fine-grained classes** (Benign + 18 attacks) in **6 categories**:
-
-| Category | Rows | Sub-attacks (rows) |
-|---|---:|---|
-| Benign | 230,339 | Benign |
-| DDoS | 5,846,623 | ICMP 1,887,175 · UDP 1,998,026 · TCP 987,063 · SYN 974,359 |
-| DoS | 2,222,205 | UDP 704,503 · SYN 540,498 · ICMP 514,724 · TCP 462,480 |
-| MQTT | 326,653 | DDoS-Connect 214,952 · DoS-Publish 52,881 · DDoS-Publish 36,039 · DoS-Connect 15,904 · Malformed 6,877 |
-| Recon | 131,402 | Port-Scan 106,603 · OS-Scan 20,666 · VulScan 3,207 · Ping-Sweep 926 |
-| Spoofing | 17,791 | ARP-Spoofing |
-
-**Facts that change the plan relative to the proposal:**
-1. **There is no BLE data in this file.** It contains Wi-Fi/MQTT traffic only. BLE data has since been obtained from Zenodo; see *External data* below.
-2. **There is no device-ID or profiling-state column.** "Device-based non-IID" and "client population drift" need a proxy, for example protocol-profile clusters (see M2). The Zenodo Wi-Fi parquet partly fixes this, because it carries `source_file`, including per-device benign profiling captures.
-3. **The data is highly imbalanced.** Benign is 2.6% and DDoS is 67%. Recon-Ping-Sweep (926 rows) and MQTT-Malformed (6,877) are tiny. Use macro metrics and class weights.
-4. **The file is sorted by label.** Any sample must be shuffled or stratified, never `head()`.
-5. **Constant columns:** on the full data only `Drate` is constant (verified in M1). `Telnet`, `IRC` and `SMTP` only looked constant in an early 300k-row sample. There are no NaN or inf values.
-6. **Shortcut features (M1 EDA):** `IAT` alone gives 0.83 6-class macro-F1 and BLE `timestamp` alone gives 0.97. These look like capture artifacts rather than attack behaviour (decision D6).
-7. **Duplicates:** 7,379 exact duplicate rows (0.08%), all within a single class (no conflicting labels), mostly Recon-Port-Scan. The Zenodo Wi-Fi table is effectively a de-duplicated copy of this CSV.
-8. **`Number` and `Weight` look like aggregation artifacts (found in M3).** `Number` is exactly 9.5 for 99.9% of DoS and DDoS rows, exactly 5.5 or 13.5 for Benign, Recon and Spoofing, and 10.0 in the profiling rows, yet every class averages about 9.5. Alone it separates Benign from DoS at t0 (0.9995 macro-F1). `Weight` tracks it. Removing both barely changes E1 (t1 0.8256 → 0.8255, t5 0.8827 → 0.8838), so they are kept for now and tested again in M14.
-9. **The two benign sources can be told apart perfectly (found in M3).** A classifier separates CSV benign rows from Zenodo profiling rows with hold-out AUC 1.0000 on the dev pool, even without `Number` and `Weight`. Profiling rows are always classified correctly, which flatters benign metrics. See decision D7.
-
-## External data: Zenodo CICIoMT2024 derivative (incl. Bluetooth)
-
-Downloaded 2026-11-04 to `data/external/zenodo_19452870/`. The zips were checked against Zenodo's MD5s, and the extracted files are in `extracted/`.
-Source: [Zenodo record 19452870](https://zenodo.org/records/19452870), DOI 10.5281/zenodo.19452870, **CC BY 4.0**, curated by V. J. L. Engel et al. It is a *processed derivative*, not the raw CIC release, so it must be cited.
-
-| File | Rows | Contents |
-|---|---:|---|
-| `bluetooth_clean.parquet` | 1,547,894 | **BLE packet-level** records: Benign 297,795 · DoS 1,250,099 · train 1,215,884 / test 317,038 / profiling 14,972 |
-| `wifi_mqtt_clean.parquet` | 9,128,910 | Same 45 flow features (lower-case names) + `time_to_live`, plus `label`, `source_file` (114 files), `split` (train 7.16M / test 1.61M / profiling 361k) |
-| `phase1–4` CSVs | — | Authors' EDA outputs: counts, correlations, entropy, imbalance |
-
-BLE caveats:
-- **The DoS rows are labelled `UNKNOWN`.** All of them come from the `Bluetooth_DoS_*.csv` source files, so they are relabelled to `DoS` (BLE) in M1.
-- **The feature space is different and much smaller.** There are 9 packet fields, 7 of them usable (`packet_length`, `inter_packet_gap`, `hci_type`, `hci_event_code`, `l2cap_length`, `cumulative_packet_count`, `timestamp`). `ble_access_addr` and `ble_pdu_type` are entirely empty. BLE therefore can't share the Wi-Fi model's 45-feature input. It needs either a **separate BLE edge model** for t4, or a protocol-specific client group in the federation.
-- Rows have real timestamps, which could support an actual chronological drift check for BLE.
-
-Wi-Fi bonus: the Zenodo parquet has **361k benign profiling rows labelled by device and scenario** (e.g. `Owltron_Camera_LAN_MIC`, `Active`, `Idle`). That gives real device identities for benign traffic, which can strengthen the device-based non-IID partition in M2. It also includes the official train/test split.
-
-The raw official release (pcaps plus Bluetooth CSVs) is at http://cicresearch.ca/IOTDataset/CICIoMT2024/. It sits behind a CIC registration form (name, email, organisation), which a person has to fill in if the raw data is needed.
-
-## Compute environment (local)
-
-- Windows 11, Python 3.14, **7.7 GB RAM**, 12 logical CPUs, **no CUDA GPU** (torch is the CPU build).
-- Already installed: numpy, pandas, pyarrow, scikit-learn, xgboost 3.2, lightgbm 4.6, shap 0.51, torch (CPU), transformers, scipy, matplotlib.
-- Missing: `river` (ADWIN; it can also be implemented in-house) and `bitsandbytes` (needs a GPU, so it doesn't apply locally).
-- Consequences:
-  - The full CSV (about 1.6 GB as float32) must be converted to Parquet in chunks.
-  - Development runs use a stratified subsample. Final runs use the full data on Kaggle (see Compute plan).
-  - LLM inference needs a backend decision; see M11.
-
----
-
-## Default design decisions (open questions from the proposal)
-
-The proposal ends with five open questions. Development proceeds with the defaults below. Change any of them here before M14. D6 to D10 were added during the work.
-
-| # | Question | Default chosen | Rationale |
-|---|---|---|---|
-| D1 | Headline target | **6-class category** (`y_category`); 19-class and binary reported as secondary | Stable with tiny sub-classes |
-| D2 | D_pub composition | **Stratified mix, as the proposal specifies:** a fixed 5,000 benign rows plus 1% of each attack category (`dpub.attack_frac`, the low end of the proposal's 1–2%), inputs only, labels hidden from distillation. Rare classes get at least 50 rows, and no class gives up more than 5% | More stable multiclass calibration; benign-only kept as an ablation. Full pool: 90,429 rows, of which DDoS is 65% because each category gives the same share, so M7 must not let DDoS dominate. Sharing soft labels on all of it costs about 2.2 MB per client per round before compression |
-| D3 | LLM override | **Conservative override**: allowed only when there is high disagreement *and* a drift flag; always logged | Matches the proposal's risk mitigation |
-| D4 | Headline drift regime | **Attack-category introduction** (t0→t5); variant and population drift as secondary | Clear and class-incremental |
-| D5 | Privacy section | **Short analysis** of what is shared (soft labels on D_pub, drift stats, escalated evidence) | Low cost, expected by TNSM reviewers |
-| D6 | Shortcut features (added in M1) | **Exclude `IAT` (Wi-Fi) and `cumulative_packet_count` (BLE) from modelling**; BLE `timestamp` is never a feature. A with-IAT run is reported as sensitivity in M14 | `IAT` alone reaches 0.83 macro-F1, and its values (mean 8.5×10⁷, max 1.7×10⁸) look like timestamps rather than inter-arrival times. **M3 A/B (t1, dev):** adding IAT lifts macro-F1 from 0.826 to 0.9998 and DoS F1 from 0.627 to 1.000, so DoS vs DDoS becomes trivially separable. That is the signature of a capture-session shortcut. It may also explain near-perfect scores in published work on this dataset, which still has to be checked against those papers before the paper claims it. Evidence: [`reports/m3/dev/shortcut_checks.md`](reports/m3/dev/shortcut_checks.md). Toggle: `features.exclude_wifi` |
-| D7 | Benign profiling rows (added in M3/M4) | **Decided 2026-11-04: `csv_only` is the headline**, and `all` is reported as secondary. The rows stay in train and test because they supply the real device identities. This slice removes them from scoring only, so the models still train on them | Profiling rows are perfectly separable from CSV benign rows and always classified correctly (fact 9). On the dev pool at t5, removing them from train and test drops benign F1 from 0.982 to 0.815 and macro-F1 from 0.883 to 0.853. Training on them also lowers recall on CSV benign rows from 0.948 to 0.899, which bears directly on the false-positive claim in H3. The dev pool over-represents them (about 3.7 profiling rows per CSV benign row, against about 1.6 on the full pool). **Full pool, same models scored both ways:** window-average macro-F1 0.8915 → 0.8897, t5 macro-F1 0.8718 → 0.8668, t5 benign F1 0.984 → 0.954, t5 benign recall 0.984 → 0.954. The effect on macro-F1 is small, but it is three points on benign metrics |
-| D8 | Drift flag at t1 (added in M5) | **Decided 2026-11-06 (the user asked for the recommended option):** the headline gate keeps the proposal's rule: confidence, disagreement and ADWIN on a model-output signal. A PSI-based drift flag is tested as a sensitivity run in M9 and is not part of any headline | **Why:** the proposal's rule escalates on confidence, disagreement or the drift detector, and says PSI is "reported, not necessarily used for hard triggers", so this is the proposal's own design. PSI would also be a one-window fix, as the evidence below shows. **What it costs:** the headline gate stays blind when an old model first meets t1 traffic, so no later result, E5 and E6 included, may claim to catch that shift, and the paper reports the blind spot. It concerns the old model only: once retrained on t1, the gate works normally. **Evidence:** At t1 the old model is confidently wrong. On the full pool its error rate goes from 0.000 to 0.715, yet it escalates 0.03 flows per 1k, and ADWIN on entropy and disagreement stays silent. PSI does see the shift: 12 of 15 clients have at least 10% of features over the alert, against 0 of 15 in the control. After t1 that flag barely fires (2, 1, 1 and 2 clients at t2–t5, against 2, 0, 1 and 0 in the controls), so it would cost little, but it also misses t3, where errors do rise. It amounts to a detector for t1 only. The proposal says PSI is "reported, not necessarily used for hard triggers", so either choice is allowed. The dev pool looked different at t5 (7 of 15 clients), so that estimate of the cost was too high |
-| D9 | What E4 to E6 build on (added in M7) | **Decided by the user (2026-11-06):** `e3` stays the proposal's E3 and is reported as is; `e3_guard` is carried forward as a named addition | On dev, `e3` doesn't beat local-only and is worse at t5 in all three seeds. `e3_guard` beats it in all three, by small margins. On the full pool (seeds 42 and 43), `e3` beats local-only by 0.0047 and 0.0042 on window average and `e3_guard` by 0.0078 and 0.0074, and only the guard is ahead at t5. The guard is not in the proposal, and it was added after seeing the seed 42 per-client table, so the proposal's rule alone doesn't settle this |
-| D10 | Escalation budget (added in M8, from M5) | **Decided 2026-11-06 (the user asked for the recommended option):** 10% stays the headline operating point, reported as an assumption, alongside the 5%, 20% and 30% points. It is a target when tuning τc and τd on held-out rows, not a cap at test time | **Why:** the proposal sets no number. It asks for "a tunable accuracy–cost frontier", so the frontier is the result and 10% is one point on it. 10% is a middle choice: on the full pool, validation rows catch 10%, 24%, 46% and 61% of edge errors at the four budgets, so higher budgets keep catching more, and no point stands out as a natural limit. **Not a cap:** test rates can pass the target, as M7 shows on next-window traffic, where the rows being scored have drifted from those used for tuning: E3 reached 10.6% (seed 43, model through t2 on t3 traffic) and local-only 13.5%. On the current window, E3's highest is 7.3%. A hard cost limit would need a rate limiter at run time, which the proposal doesn't ask for, so M11 reports the calls per 1k flows it actually makes and the rate limiter is left out. M14 sweeps τc and τd, which covers the frontier |
-| D11 | What E5 and E6 build on (added in M9) | **Decided by the user (2026-11-08):** `e4_added`, the ADWIN trigger added to E3's fixed schedule with MI top-30, is carried forward as E4. `e4`, where the trigger replaces the schedule (the experiment matrix's reading), stays in the M9 report with its result | Chosen after the full-pool results were seen, so it is a post-hoc choice and is reported as one. `e4` fails H2 on the full pool (0.8360 against E3's 0.9256, about nine times the variance). `e4_added` scores 0.9240, serves better during a window (0.853 against 0.686 over rounds), and reaches E3's earlier score sooner at one boundary of five, at 38 more local updates. It doesn't lower variance, so H2 is at best partly supported |
-
----
-
-## Hypotheses (from the proposal)
-
-| # | Hypothesis | Tested in | How |
-|---|---|---|---|
-| H1 | DA-FedDistill improves average macro-F1 across drift windows versus static and naïve incremental baselines, by reducing client overfitting and enabling cross-client knowledge transfer without weight sharing | M7, M14 | Window-averaged macro-F1 of E3 vs static (M3) and naïve incremental (M6). **Dev, 3 seeds: supported against static, not against naïve. Full, 1 seed: supported against both on window average (+0.523, +0.005), but not at t5 against naïve (-0.003)** (see M7). **M14, 3 seeds, client bootstrap with Holm: supported against static (+0.530), not against naïve (+0.0044, interval −0.0024 to +0.0096)** |
-| H2 | Drift-triggered adaptation (ADWIN) reduces time-to-recover after major shifts and stabilizes performance variance across windows | M9, M14 | E4 vs E3: time-to-recover and variance across windows. **M14, 3 seeds: not supported** (time-to-recover 2.40 against 2.40 windows; E4 slightly more variable, Holm p 0.12) |
-| H3 | Gated LLM verification reduces false positives during high-drift windows, especially protocol-related ones, with overhead controlled through the LLM-call rate | M11, M14 | E5 vs E3/E4: benign false-positive rate per window on `csv_only` rows; LLM calls per 1k samples. **M14, 3 seeds: not supported** (Gemma 2 2B never changes a benign decision; ~85 calls per 1k flows) |
-| H4 | SHAP + LLM explanations give more actionable operator-facing narratives than SHAP alone, when constrained to SHAP-grounded evidence and stored for audit | M11, M14 | The proposal gives no measure, so this plan adds one: see M14. **M14: (a) 0.36 of the verifier's reasons are grounded by the strict rule (0.42 name a top-5 SHAP feature); (b) 0.56 schema-valid on the first try, 0.9999 after retries. (c), run for the record after being dropped, not preregistered: no Gemma reply names a concrete operator action (0 of 14,066 by keyword list), and its label is right less often than the edge's (0.45 vs 0.70 on 100 rows); the human scoring is pending** |
-
-## Experiment matrix (from the proposal)
-
-| Group | FL collaboration | Drift adaptation | Feature selection | LLM verification | XAI | Question |
-|---|---|---|---|---|---|---|
-| E1 | None (centralized) | None | None | None | None | Upper bound without constraints |
-| E2 | FedAvg (MLP) | None vs incremental | None | None | SHAP optional | Comparison with classic FL weight averaging |
-| E3 | DA-FedDistill | Incremental + rehearsal | None | None | SHAP | Does distillation FL improve drift robustness? |
-| E4 | DA-FedDistill | Drift-triggered schedule (ADWIN) | MI-driven top-K | None | SHAP | Does drift-aware feature focus stabilize models? |
-| E5 | DA-FedDistill | As E4 | As E4 | Gated (uncertain only) | SHAP + LLM | Can LLM verification improve precision and reduce FPs under drift? |
-| E6 | DA-FedDistill | As E4 | As E4 | Always-on vs gated | SHAP + LLM | Cost–accuracy frontier |
-| E7 | Federated GBDT (if feasible) | Incremental | None | None | SHAP | How close can "true" federated boosting get? |
-
-Other baselines: static (t0 only), FedProx + MLP, and FedMD-style distillation. The ablations are listed under M14.
-
----
-
-## Repository layout
-
-Directories marked *(planned)* are still empty.
+## Repository structure
 
 ```
 IDS-code/
-├── README.md                     # this file (living plan)
-├── pyproject.toml                # package `ids`; lower-bound deps + extras [nn], [llm], [dev]
 ├── configs/
-│   ├── default.yaml              # paths, seeds, τc, τd, K, window/client settings
-│   ├── env/{local,kaggle}.yaml   # environment profiles (paths/resources only)
-│   └── experiments/              # (planned) E1..E7.yaml
-├── data/                         # untracked
-│   ├── raw/                      # ciciomt2024_full_8p7m.csv (original Wi-Fi/MQTT CSV)
-│   ├── external/zenodo_19452870/ # Zenodo derivative: BLE + Wi-Fi parquet (see External data)
-│   ├── processed/                # data_manifest.json + 4 parquet files; all Kaggle needs
-│   └── splits/<pool>/<timeline>/ # assignments, dpub, ble_assignments, window_definition, client_partitions, counts
+│   ├── default.yaml           # every setting: data, partition, models, FL, drift, gate, LLM, policy
+│   └── env/                   # local and Kaggle profiles (paths and resources only)
 ├── src/ids/
-│   ├── data/          # schema (labels), ingest, sample, external, io
-│   ├── partition/     # timeline, allocate, build (clients, D_pub, BLE), io
-│   ├── models/        # edge (XGB + LGBM, fusion, calibration, save/load, latency), incremental; later mlp
-│   ├── eval/          # metrics, drift_metrics, system, harness, plots
-│   ├── drift/         # adwin, shift (psi/kl/wasserstein), gate
-│   ├── fl/            # rehearsal, distill (DA-FedDistill cloud side); (planned) fedavg, fedprox, fed_gbdt
-│   ├── xai/           # (planned) shap local/global, store
-│   ├── llm/           # (planned) backend, prompts, schema, verifier, policy agent
-│   └── utils/         # seed, jsonl, config, run
-├── scripts/                      # CLI entry points per milestone
-├── notebooks/                    # kaggle_bootstrap, m3_kaggle (M3 to M5), m6_kaggle, m7_kaggle, m8_kaggle, m8_dirty_check, m9_kaggle, m10_kaggle, m11_kaggle, m11_mistral_kaggle, m12_kaggle, m13_kaggle; later Notebook A (train/FL) and B (inference/LLM/XAI)
-├── tests/
-├── reports/m<k>/                 # tracked milestone reports (EDA, figures, manifests)
-└── results/runs/<run_id>/        # untracked: config snapshot, metrics, logs, models
+│   ├── data/                  # schema, ingestion, sampling, external data, I/O
+│   ├── partition/             # drift timeline, non-IID allocation, D_pub
+│   ├── models/                # edge ensemble, incremental boosting
+│   ├── drift/                 # ADWIN, PSI/KL/Wasserstein shift, uncertainty gate
+│   ├── fl/                    # rehearsal, DA-FedDistill, FedAvg/FedProx, federated GBDT
+│   ├── llm/                   # verifier and adaptation-policy agent
+│   ├── eval/                  # metrics, harness, statistics, TreeSHAP, plots
+│   └── utils/                 # config, seeding, run logging, JSONL
+├── scripts/                   # command-line entry points, numbered by pipeline stage (m1 … m15)
+├── notebooks/                 # Kaggle notebooks, incl. the two reproduction notebooks (m15_notebook_a/b)
+├── tests/                     # unit tests (no data needed)
+├── reports/                   # committed results: tables, figures, per-stage reports
+└── release/                   # released configs, partitions, LLM logs, dataset card, checksums
 ```
 
----
+## Installation
 
-## Milestones
+Requires Python 3.10 or later.
 
-Each milestone lists its **goal**, **tasks**, **deliverables**, and **acceptance criteria**. When a milestone is done, its checkboxes are ticked and a **Results** block is added.
+```bash
+git clone https://github.com/Indrajit147/IDS-code.git
+cd IDS-code
+pip install -e ".[dev]"          # core: numpy, pandas, scikit-learn, xgboost, lightgbm, shap, ...
+pip install -e ".[nn]"           # optional: PyTorch, for the FedAvg/FedProx MLP baselines
+pip install -e ".[llm]"          # optional: transformers + bitsandbytes, for the LLM experiments (GPU)
+python -m pytest -q              # unit tests
+```
 
-### M0: Project scaffolding & environment
-**Goal:** a reproducible skeleton that every later milestone plugs into.
-- [x] Create the layout above, `pyproject.toml`, `configs/default.yaml` and env profiles `configs/env/{local,kaggle}.yaml`
-- [x] `utils/seed.py` (global seed plus stable SHA-256-derived per-client/window seeds), `utils/jsonl.py` (append-only JSONL), `utils/config.py` (layered config, dotted CLI overrides, Kaggle auto-detection and input discovery)
-- [x] `utils/run.py` run-directory convention: each run snapshots its config, git commit/dirty flag, Python/platform and package versions
-- [x] `pytest` tests; `git init` and push to GitHub
-- [x] Kaggle bootstrap notebook (`notebooks/kaggle_bootstrap.ipynb`)
-- **Deliverables:** skeleton, config, logging and seed utilities.
-- **Acceptance:** `pytest` passes, and a dummy run writes a run folder containing `experiment_config.json`.
+## Data
 
-**Results (2026-11-04)**
-- `pytest`: **6 passed** (config layering/overrides, Kaggle profile, override parsing, seed determinism, JSONL append, run snapshots).
-- `scripts/m0_smoke_run.py` (local) wrote `results/runs/<ts>_m0_smoke/` containing `experiment_config.json`, `environment.json`, `events.jsonl`, `run.log` and `data_check.json`. Both the raw CSV and the Zenodo folder were found.
-- Decision: dependencies are declared as **lower bounds** in `pyproject.toml`, not pinned, and Kaggle installs with `--no-deps`. Forcing exact pins would reinstall Kaggle's preinstalled stack, which can break the image. Exact versions are recorded per run in `environment.json` instead.
-- Kaggle: the first real session (M3, commit `15378ba`, Python 3.13, 4 vCPU) completed on 2026-11-04. A simulated session for the current notebook also passed (fresh GitHub clone, `--env kaggle`, only the five processed files under a nested input folder).
+The processed input is public on Kaggle: [indrajit147/ciciomt2024-processed-for-federated-ids](https://www.kaggle.com/datasets/indrajit147/ciciomt2024-processed-for-federated-ids). Copy its five files into `data/processed/`:
+- `data_manifest.json`
+- `wifi_mqtt_full.parquet`
+- `wifi_mqtt_dev.parquet`
+- `wifi_profiling.parquet`
+- `ble.parquet`
 
-### M1: Data ingestion, cleaning & label harmonization
-**Goal:** a fast, memory-safe, auditable processed dataset.
-- [x] Record the SHA-256 and the row/column counts of the raw CSV
-- [x] Chunked CSV → Parquet with float32 downcasting. A column stays float64 when the float32 cast would merge more than 0.1% of its distinct values
-- [x] Labels: `y_binary` {benign, attack}, `y_category` (6), `y_attack19` (19), using fixed integer codes from `src/ids/data/schema.py`; Sub_Attack/Major_Label consistency asserted on every chunk
-- [x] Constant columns found on the full data (excluded by the loader, not deleted); NaN/inf checked; exact duplicates and label conflicts reported, not dropped
-- [x] Stratified dev subsample: 5% per class, ≥20k rows per class, rare classes whole, with per-class prior weights
-- [x] BLE: Zenodo `UNKNOWN` relabelled to `BLE-DoS`, with an asserted invariant that every such row comes from a DoS capture file; all-NaN columns dropped
-- [x] Wi-Fi device profiling: 361k benign rows from 42 device/scenario captures saved for M2
-- [x] EDA report: class counts, feature stats, correlation, per-class profiles, single-feature shortcut check, Zenodo-vs-CSV audit
-- **Deliverables:** `data/processed/*.parquet`, `data_manifest.json`, EDA figures.
-- **Acceptance:** loading the full Parquet fits in under 3 GB of RAM, and the label counts match the table above.
+Their SHA-256 checksums are in [`release/dataset/SHA256SUMS`](release/dataset/SHA256SUMS), and the dataset card is [`release/dataset/README.md`](release/dataset/README.md).
 
-**Results (2026-11-04)**
-- Run: `python scripts/m1_prepare_data.py` (~100 s) then `python scripts/m1_eda.py`. Report: [`reports/m1/EDA.md`](reports/m1/EDA.md); manifest: [`reports/m1/data_manifest.json`](reports/m1/data_manifest.json).
-- Raw CSV SHA-256 `f7cb6fe3…f0eb6`, 8,775,013 × 47. Label counts match the table above exactly.
-- Processed: `wifi_mqtt_full.parquet` **249 MB** (from 2.4 GB CSV), `wifi_mqtt_dev.parquet` 29 MB (568,146 rows), `ble.parquet` 10 MB, `wifi_profiling.parquet` 11 MB.
-- float64 kept for `Rate, Srate, AVG, Std, IAT, Magnitue, Radius, Covariance`; float32 for the other 37.
-- Constant: only `Drate`. NaN/inf: 0. Duplicates: 7,379 rows (0.08%), 0 conflicting-label groups.
-- Memory to load the full data (all 44 non-excluded columns): 1.8 GB dataframe, 1.8 GB peak resident, 3.2 GB peak committed (down from 4.6 GB after switching to pyarrow `split_blocks`/`self_destruct`). Loads in about 9 s. **Pass.**
-- Redundant pairs (|ρ| ≥ 0.98): Rate~Srate, IPv~LLC~(−ARP), AVG~Magnitue~Tot_size, Number~Weight, Radius~Covariance~Std. They are kept for now, because trees tolerate redundant features; M9 feature selection decides.
-- Shortcut check → **D6**: `IAT` excluded from modelling by default. BLE `hci_event_code` (0.95) and `packet_length` (0.93) are strong but plausibly real DoS behaviour, so they are kept.
-- Tests: 13 passing (`tests/test_data.py` covers label encoding, round-trip, dtype rule, duplicates, sampling, row extraction, BLE relabel invariant, feature exclusion).
+To rebuild it from the original sources, `scripts/m1_prepare_data.py` reads a merge of CICIoMT2024's 72 Wi-Fi/MQTT CSV files together with the Zenodo derivative. The expected SHA-256 of the merged CSV is in the dataset card. The merge itself was done by hand and is not scripted.
 
-### M2: Synthetic drift timeline, non-IID clients & D_pub
-**Goal:** the experimental world (windows × clients) written as JSON so it can be reproduced.
-- [x] Window definition (headline, D4). Each class is introduced at its window, then recurs with fresh, disjoint rows in every later window (cumulative stream):
-  | Window | Train labels introduced | Notes |
-  |---|---|---|
-  | t0 | Benign + DoS | baseline deployment |
-  | t1 | + DDoS | DoS/DDoS confusion expected |
-  | t2 | + Recon (Port-Scan, Ping-Sweep first) | scan patterns |
-  | t3 | + MQTT | protocol-semantic drift |
-  | t4 | + Spoofing (ARP) + BLE DoS | BLE from Zenodo; separate BLE feature space and model (see External data) |
-  | t5 | all + Recon OS-Scan/VulScan (variant drift) + client mix shift | compound drift |
-- [x] Device identity: instead of a clustering proxy, the **real Zenodo device captures** are used. Each of 21 device/network groups (e.g. `Owltron_Camera|WAN`) belongs to exactly one client; the network-wide captures (Active/ActiveBroker/Idle) are spread over all clients
-- [x] 15 clients (n_clients is configurable for the 10/20 sensitivity runs): Dirichlet(α=0.5) label skew per class, quantity skew emerges naturally; **population drift at t5**: 5 clients get re-drawn attack mixes and 5 held-back device groups are onboarded
-- [x] D_pub: fixed stratified subset (D2) of 90,429 rows, removed from all client/test data, tagged with `intro_window` so that M7 sees only classes introduced so far (`window_mode: cumulative`)
-- [x] Per-window, client-local held-out test sets (20% per window×class). Exact duplicates are dropped first, so train and test never share a row
-- [x] Alternate timeline `alt_order` (different family order, t5 = population drift only)
-- [x] BLE sub-federation: 3 clients joining at t4, official BLE train/test split, Dirichlet label skew
-- [x] Loader `ids.partition.io.load_rows(cfg, pool, timeline, windows, split, clients)` plus `load_dpub`, `load_ble_rows`
-- **Deliverables:** `window_definition.json`, `client_partitions.json`, `dpub.parquet`, partition statistics plots.
-- **Acceptance:** fully deterministic from the seed; the statistics show measurable non-IID skew (e.g. Jensen–Shannon divergence between client label distributions).
+## Reproducing the results
 
-**Results (2026-11-04; rebuilt the same day when D_pub changed to match the proposal)**
-- Run: `python scripts/m2_build_partitions.py` (~45 s for dev + full × 2 timelines). Reports: [`reports/m2/full/PARTITION.md`](reports/m2/full/PARTITION.md) (headline) and [`reports/m2/dev/PARTITION.md`](reports/m2/dev/PARTITION.md).
-- Full pool, headline: **9,038,114 assigned rows**, which reconciles exactly (8,775,013 CSV − 7,379 dups − 90,429 D_pub + 361,081 profiling − 172 profiling dups). Per window: t0 370k train / 92k test, t1–t5 1.30–1.44M train / 324–359k test.
-- Dev pool: 631,431 rows, D_pub 6,523, BLE 78,380, for fast local work.
-- Non-IID: mean client JSD vs window 0.17 (t0) → 0.20 (t5), range 0.07–0.33. Client size at t5 ranges 33k–224k.
-- **Deterministic:** rebuilding gives a byte-identical `assignments.parquet`, `dpub.parquet` and `ble_assignments.parquet`, including from a fresh clone under the Kaggle profile. Loader cross-check: loaded features match the processed Parquet exactly.
-- Observation: because DDoS dominates the volume, newly introduced families are a **small slice** of their window (ARP-Spoofing 0.5% of t4 train, Recon-OS-Scan 1.1% and Recon-VulScan 0.2% of t5). This is realistic, and macro-F1 exposes it, but the later drift steps are subtle in accuracy terms. A per-window volume cap is an easy knob if the drift signal proves too weak.
-- Tests: 20 passing (`tests/test_partition.py`: timeline validation, allocation primitives, D_pub caps, row-disjointness, no class before its intro window, device single-ownership, onboarding window, determinism, BLE split).
+**Hardware.** Development runs (`--pool dev`, a stratified 568k-row sample) fit on a laptop CPU. Full-pool runs were made in Kaggle CPU sessions (about 29 GB of RAM), and the LLM experiments on a T4 GPU. Cells are bit-identical only at the same thread count: the headline runs use 4 (`--set resources.n_jobs=4`), and other counts move individual cells by up to 0.004 macro-F1.
 
-### M3: Edge ensemble + centralized & static baselines
-**Goal:** a strong edge detector and the upper and lower bounds.
-- [x] XGBoost and LightGBM with balanced class weights (capped at 50); edge-friendly limits (depth 8 / 63 leaves, ≤300 trees, early stopping 20)
-- [x] Fixed global label space: models train on the locally present classes, and their outputs are scattered into all 6 columns (absent classes get exactly 0), so windows and clients with missing classes stay compatible
-- [x] Fusion: weighted averaging with the weight chosen by validation log-loss (w ∈ {0, 0.1, …, 1}); temperature calibration on validation NLL
-- [x] **E1 centralized** (retrained per window on all clients' data for windows 0..t) = upper bound
-- [x] **Static** (trained on t0 only) = drift-degradation lower bound. It is row t0 of the train × eval matrix
-- [x] Edge latency (single-flow P50/P95, batched µs/flow) and model size
-- [x] BLE edge model (binary, separate 5-feature space) for the BLE sub-federation
-- [x] Kaggle notebook for the full pool: `notebooks/m3_kaggle.ipynb`
-- **Acceptance:** E1 and static results for every window are logged; calibration error (ECE) is reported before and after calibration.
+### One-click reproduction on Kaggle
 
-**Results, dev pool (2026-11-04)**: [`reports/m3/dev/RESULTS.md`](reports/m3/dev/RESULTS.md)
-- Run: `python scripts/m3_baselines.py --pool dev` (~3 min locally). Detection metrics reproduce byte for byte at the same thread count. A different thread count changes individual cells by at most 0.004 macro-F1 (window average unchanged at 0.891). Latency varies between runs.
-
-  | window | t0 | t1 | t2 | t3 | t4 | t5 | window avg | avg excl. t0 |
-  |---|---:|---:|---:|---:|---:|---:|---:|---:|
-  | E1 centralized macro-F1 | 1.000 | 0.826 | 0.858 | 0.890 | 0.889 | 0.883 | **0.891** | 0.869 |
-  | Static (t0 only) macro-F1 | 1.000 | 0.463 | 0.319 | 0.226 | 0.159 | 0.154 | **0.387** | 0.264 |
-
-- **Drift effect confirmed.** Without updates the model falls from 1.000 to 0.154 by t5, which is 0.73 below E1 at that window, so the timeline gives a strong signal for M6–M9.
-- **The perfect t0 score inflates both averages,** hence the extra column. Benign vs DoS is easy: `Number` alone gets 0.9995, but so do real packet-size features (`AVG` 0.985, `Tot_size` 0.984), and E1 still scores 0.9993 without `Number` and `Weight`. So this is mostly an easy first window, not only an artifact.
-- **The main error is DoS↔DDoS confusion** (20–26% each way; DoS F1 ≈ 0.63, DDoS ≈ 0.85), which the proposal anticipated. All other categories reach F1 ≥ 0.88 (benign 0.98, recon 0.96, MQTT 0.99, spoofing 0.88–0.93). See the IAT A/B under D6.
-- Components (diagonal mean): XGB 0.8903, LGBM 0.8900, fused 0.8910, calibrated 0.8910 macro-F1. **Calibration lowers ECE from 0.0168 to 0.0123.** The fusion weight varies by window (w_xgb 0.0–1.0).
-- Edge cost on 12 threads: t0 model 0.9 MB with batched inference at about 3 µs/flow. The t5 model is **27 MB** (XGB 20 MB + LGBM 7 MB) at about 25 µs/flow batched, with about 9–10 ms single-flow latency. M4 measures the same model on one thread at about 3 ms single-flow, so most of that latency is thread overhead. The size is high for a constrained gateway, so tree-count and depth limits get revisited in M9 (feature selection) and M14.
-- BLE: macro-F1 0.992–0.995, AUROC ≥ 0.999. BLE DoS is nearly trivially separable from packet-level fields.
-- Shortcut and data checks are tracked in [`reports/m3/dev/shortcut_checks.md`](reports/m3/dev/shortcut_checks.md) (`scripts/m3_shortcut_checks.py`): D6, dataset facts 8–9, D7.
-
-**Results, full pool (2026-11-04)**: [`reports/m3/full/RESULTS.md`](reports/m3/full/RESULTS.md)
-- Kaggle run `20261104-154549_m3_baselines_full` at commit `4521a07` on 4 vCPU: M3 took 51 min, M4 6 min and M5 7 min. Its test and D_pub row counts match the tracked M2 report. The runs are flagged `git_dirty`. A later check at `e05ff79` reproduced the flag from three redrawn M2 figures (see M8); this run's own files weren't recorded.
-
-  | window | t0 | t1 | t2 | t3 | t4 | t5 | window avg | avg excl. t0 |
-  |---|---:|---:|---:|---:|---:|---:|---:|---:|
-  | E1 centralized macro-F1 | 1.000 | 0.831 | 0.868 | 0.895 | 0.883 | 0.872 | **0.892** | 0.870 |
-  | Static (t0 only) macro-F1 | 1.000 | 0.463 | 0.337 | 0.263 | 0.213 | 0.209 | **0.414** | 0.297 |
-
-- All rows, as in the dev table above; the CSV-only headline (D7) is in M4 below.
-- The dev pool predicted E1 well: window average 0.891 there against 0.892 here. Static is 0.387 against 0.414.
-- Where the full pool differs: accuracy is lower (t5 0.818 vs 0.884), because DDoS and DoS dominate its test rows and they are the confused pair. Spoofing F1 is weaker (t5 0.801 vs 0.881).
-- Calibration lowers ECE from 0.0239 to 0.0172. The t5 model is 36.5 MB with 1,800 XGB + 1,326 LGBM trees, at 74 µs/flow batched on 4 vCPU. BLE: macro-F1 0.992–0.994, AUROC 0.9998.
-- Tests: 25 passing at the time (`tests/test_edge.py`: global label space with absent classes, binary mode, persistence, temperature/ECE, balanced weights, present-class macro metrics).
-
-### M4: Evaluation harness & metrics
-**Goal:** one evaluator that every experiment reuses.
-- [x] Detection: accuracy, macro-F1, per-class precision/recall, AUROC (binary), one-vs-rest AUC, confusion matrices per window and per client cluster (`eval/metrics.py`, `eval/harness.py`). Clusters: Ward linkage on client training label mix, since the proposal doesn't define them
-- [x] Drift robustness: window-averaged macro-F1 (with and without t0), forgetting (F_max − F_final per class and per window), time-to-recover within ε = 0.02 (`eval/drift_metrics.py`)
-- [x] System: edge latency for XGBoost, LightGBM and the fused ensemble on one thread, model size, tree counts and an upper bound on comparisons per flow (the proposal's stand-in for FLOPs), training time. Helpers ready and unit-tested for M7/M11: LLM latency (mean/P95), LLM calls per 1k samples, FL bytes/round, escalation payload bytes (`eval/system.py`)
-- [x] Standard results table plus plot writers (`eval/plots.py`, `scripts/m4_evaluate.py`)
-- [x] One predictor interface for shared and per-client models (`predict_global`, `predict_by_client`), so M6–M13 go through the same code; `EdgeEnsemble.load` for saved models
-- [x] Every metric on two slices: `all` and `csv_only` (D7)
-- **Acceptance:** M3 results are regenerated through the harness with identical numbers.
-
-**Results, dev pool (2026-11-04)**: [`reports/m4/dev/EVALUATION.md`](reports/m4/dev/EVALUATION.md)
-- Run: `python scripts/m4_evaluate.py --pool dev` (~1 min). It reloads every saved M3 model and stops with an error if any number disagrees with what M3 logged.
-- **Acceptance passed, twice.** M3 moved onto the harness reproduces its `results.csv` **byte for byte** (160 rows). Reloaded models match the logged numbers to within 5×10⁻¹¹, which is the rounding of the 10-decimal JSON log.
-
-  | method | slice | window avg | avg excl. t0 | final (t5) | class forgetting |
-  |---|---|---:|---:|---:|---:|
-  | E1 | all rows | 0.8910 | 0.8692 | 0.8827 | 0.0290 |
-  | E1 | CSV rows only | 0.8844 | 0.8612 | 0.8632 | 0.0370 |
-  | Static | all rows | 0.3867 | 0.2641 | 0.1537 | n/a |
-  | Static | CSV rows only | 0.3460 | 0.2152 | 0.0779 | n/a |
-
-- **Time to recover:** E1 recovers within one update at t2–t5. It never gets back to its t1 reference, because that reference is the perfect t0 score, so comparisons in M7/M9 should focus on t2–t5. Static never recovers. These are the reference points for H2.
-- **Client clusters:** at t5, cluster macro-F1 ranges from 0.857 to 0.906.
-- **Edge cost, one thread:** t5 ensemble about 3 ms single-flow and about 100 µs/flow batched. Up to 1,800 XGBoost + 1,038 LightGBM trees, at most 24,780 comparisons per flow, 27 MB.
-- **Full pool:** [`reports/m4/full/EVALUATION.md`](reports/m4/full/EVALUATION.md). The regression check passed on all 160 rows within 5×10⁻¹¹. CSV-only rows are the headline (D7).
-
-  | method | slice | window avg | avg excl. t0 | final (t5) | class forgetting |
-  |---|---|---:|---:|---:|---:|
-  | **E1** | **CSV rows only** | **0.8897** | **0.8677** | **0.8668** | **0.0277** |
-  | E1 | all rows | 0.8915 | 0.8698 | 0.8718 | 0.0254 |
-  | **Static** | **CSV rows only** | **0.4024** | **0.2829** | **0.1840** | n/a |
-  | Static | all rows | 0.4140 | 0.2968 | 0.2089 | n/a |
-
-- One thread, on Kaggle: the t5 ensemble takes 1.02 ms per single flow (P50) and 142 µs/flow batched.
-
-### M5: Drift detection & uncertainty gate
-**Goal:** the signals that drive escalation and adaptation.
-- [x] ADWIN (in-house, `src/ids/drift/adwin.py`) on the error rate (when labels exist) and on label-free proxies (entropy, XGB–LGBM disagreement)
-- [x] PSI, KL and Wasserstein per feature and client against a running baseline
-- [x] Gate: escalate iff `conf < τc` OR `disagree > τd` OR drift flag; τ values tuned on validation data
-- [x] Drift registry: per-window/client drift events logged to JSONL (`drift_registry.jsonl` in the run folder)
-- [x] Kaggle notebook extended: `notebooks/m3_kaggle.ipynb` now also runs M5
-- **Acceptance:** ADWIN fires at the t1–t5 boundaries with low false alarms inside windows; the escalation-rate vs τ curve is plotted.
-- **Acceptance outcome:** partly met on both pools. On the full pool, ADWIN on the error rate catches all 33 affected clients with no false alarms, but the pooled stream fires at t1–t3 only: the error rate barely moves at t4 (0.181 → 0.185) and t5 (0.185 → 0.185). The label-free signals catch 16 of 33 (disagreement) and 11 of 33 (entropy). On the dev pool: The curve is plotted and there were no false alarms. ADWIN on the error rate fires at t1–t4 on the pooled stream, but not at t5, where the error rate doesn't rise (0.137 → 0.134). The label-free signals fire at fewer boundaries: disagreement at t2–t4, entropy at t3 only.
-
-**Results, dev pool (2026-11-04)**: [`reports/m5/dev/DRIFT.md`](reports/m5/dev/DRIFT.md)
-- ADWIN was checked against `river` 0.26.1: identical detection lists on 40 synthetic streams.
-- At each boundary, the model trained through the earlier window scores test rows from that window, then from the new one. Rows are shuffled inside each window, because the stored order is grouped by class and would look like drift. The data has no timestamps, so real bursts are absent and the false-alarm result applies only to shuffled traffic.
-
-  | signal | needs labels | boundaries caught, pooled | affected clients caught | false alarms (pre-boundary rows: 93,448) |
-  |---|---|---:|---:|---:|
-  | error rate | yes | 4/5 | 38/49 | 0 |
-  | disagreement | no | 3/5 | 14/49 | 0 |
-  | entropy | no | 1/5 | 11/49 | 0 |
-
-- **Main finding: the gate can't see t1 (D8).** The t0 model knows only Benign and DoS, and it is confidently wrong on new classes. Its error rate goes from 0.000 to 0.648, but it escalates 0 flows per 1k and accuracy on what it keeps is 0.271. Later boundaries behave better: at t3 the old model escalates 208 flows per 1k and catches 46% of its errors. The drift flag raises that to 280 per 1k and 52%.
-- **PSI sees what the model's own signals miss.** Mean PSI by window is 0.236, 0.028, 0.176, 0.064 and 0.118, against controls of 0.010, 0.015, 0.009, 0.053 and 0.031. It is noisier at t4, where the new window barely separates from its control.
-- **Gate thresholds are a cost decision.** The proposal sets no budget, so the 10% used below is an assumption. Settled models then catch 29–31% of edge errors on test, against 29.5% on validation:
-
-  | escalation budget | τc | τd | escalation rate | errors captured (validation) |
-  |---:|---:|---:|---:|---:|
-  | 5% | 0.52 | 0.15 | 0.039 | 0.107 |
-  | 10% | 0.58 | 0.40 | 0.100 | 0.295 |
-  | 20% | 0.66 | 0.30 | 0.200 | 0.526 |
-  | 30% | 0.74 | 0.15 | 0.294 | 0.702 |
-
-- **Disagreement adds almost nothing as a per-flow test:** the cost-benefit curves with it off and at τd = 0.2 nearly coincide, and τd = 0.05 is worse. It stays in the gate because the proposal specifies it, and it is still useful to ADWIN as a stream.
-
-**Results, full pool (2026-11-04)**: [`reports/m5/full/DRIFT.md`](reports/m5/full/DRIFT.md)
-
-  | signal | needs labels | boundaries caught, pooled | affected clients caught | false alarms (pre-boundary rows: 1,448,425) |
-  |---|---|---:|---:|---:|
-  | error rate | yes | 3/5 | 33/33 | 0 |
-  | disagreement | no | 2/5 | 16/33 | 0 |
-  | entropy | no | 1/5 | 11/33 | 0 |
-
-- **The t1 blind spot is confirmed (D8).** The pooled error rate jumps from 0.000 to 0.715, while the old model escalates 0.03 flows per 1k and accuracy on what it keeps is 0.259. Later boundaries are milder than on the dev pool: at t3 the old model escalates 118 flows per 1k and catches 31% of its errors, and the drift flag adds little (124 per 1k, 31%).
-- **PSI is much weaker here after t1.** Mean PSI by window is 0.243, 0.047, 0.053, 0.026 and 0.065, against controls of 0.001, 0.047, 0.020, 0.025 and 0.016, so t2 and t4 can't be told from their controls. On the dev pool t3 looked strong (0.176) and here it is 0.053.
-- **The gate catches fewer errors at each budget than on the dev pool:**
-
-  | escalation budget | τc | τd | escalation rate | errors captured (validation) |
-  |---:|---:|---:|---:|---:|
-  | 5% | 0.52 | 0.15 | 0.043 | 0.100 |
-  | 10% | 0.56 | 0.20 | 0.095 | 0.241 |
-  | 20% | 0.64 | off | 0.200 | 0.456 |
-  | 30% | 0.70 | 0.10 | 0.294 | 0.609 |
-
-- At the 10% budget, settled models send 88–104 flows per 1k to the cloud and catch 24–26% of edge errors on test, in line with validation.
-
-### M6: Incremental local learning + rehearsal buffer
-**Goal:** client-side continual learning, before any federation.
-- [x] Incremental update: XGBoost continued boosting (`xgb_model=`) and LightGBM `init_model`; compared with retraining from scratch (`models/incremental.py`)
-- [x] Bounded rehearsal buffer, class-balanced, with a configurable size (`fl/rehearsal.py`)
-- [x] Local-only baseline (no collaboration) under the timeline
-- [x] Naïve incremental baseline (no collaboration, no rehearsal), which H1 compares against
-- [x] Full-pool run through `notebooks/m6_kaggle.ipynb` (one seed)
-- **Acceptance:** forgetting with rehearsal is below forgetting without it; the buffer stays within its memory budget.
-
-**Results, dev pool (2026-11-04)**: [`reports/m6/dev/INCREMENTAL.md`](reports/m6/dev/INCREMENTAL.md), [`reports/m6/dev/SEEDS.md`](reports/m6/dev/SEEDS.md)
-- Run: `python scripts/m6_incremental.py --pool dev --set resources.n_jobs=4` (15 min, 1.0 GB peak), repeated with seeds 43 and 44. The partition is the same in all three. Mean ± standard deviation, CSV rows only:
-
-  | method | window avg | avg excl. t0 | final (t5) | class forgetting | fit time, seed 42 | model size at t5, seed 42 |
-  |---|---:|---:|---:|---:|---:|---:|
-  | Naïve incremental | 0.9123 ± 0.0004 | 0.8951 | 0.8818 | 0.0353 ± 0.0021 | 86 s | 9.0 MB |
-  | Local + rehearsal (500) | 0.9121 ± 0.0005 | 0.8949 | 0.8815 | 0.0323 ± 0.0009 | 103 s | 9.9 MB |
-  | **Local + rehearsal (2,000)** | 0.9119 ± 0.0006 | 0.8946 | 0.8820 | **0.0275 ± 0.0005** | 127 s | 10.5 MB |
-  | Local + rehearsal (8,000) | 0.9121 ± 0.0007 | 0.8949 | 0.8799 | 0.0219 ± 0.0011 | 152 s | 11.4 MB |
-  | Retrain per client | 0.9127 ± 0.0005 | 0.8958 | 0.8802 | 0.0224 ± 0.0004 | 225 s | 4.0 MB |
-  | E1 centralized (M3, one seed) | 0.8844 | 0.8612 | 0.8632 | 0.0370 | | |
-  | Static centralized (M3, one seed) | 0.3460 | 0.2152 | 0.0779 | n/a | | |
-
-- **Acceptance met on the dev pool.** At 2,000 and 8,000 rows, forgetting is below naïve in all three seeds. At 500 rows it is not reliable: the seed 42 difference is +0.0001. The buffer never exceeded its limit (2,000 rows, 360 kB on the largest client).
-- **Rehearsal lowers forgetting but does not raise macro-F1.** All five methods sit within 0.001 of each other on window average, which is about the seed noise. Old classes recur with fresh rows in every later window of this timeline, so a client without a buffer keeps seeing them. Expect the M14 "remove rehearsal" ablation to show little on this timeline.
-- **Incremental matches retraining on macro-F1 at 38% of the fit time** (naïve vs retrain), but models keep growing and are 2.2× larger by t5.
-- **Local models beat centralized E1 by 0.028, and this is not like for like.** Nearly all of the gain is DDoS and DoS: at t5, DDoS F1 is 0.89 vs 0.85 and DoS 0.73 vs 0.63 (seed 42, retrain vs E1). These two are hard to separate from features, so a client model can lean on its own label mix. That explanation is likely but untested. It matters for M7: E3 must beat local-only, which starts from this advantage.
-
-**Results, full pool (2026-11-05, Kaggle)**: [`reports/m6/full/INCREMENTAL.md`](reports/m6/full/INCREMENTAL.md)
-- Run `20261105-160217_m6_incremental_full` at `bfed6a9`, 4 threads, 2 h 38 min against the 4 h estimate (92 min fitting, the rest mostly evaluation). One seed, so differences below the dev seed noise (about 0.002 on forgetting) are not evidence. The run is marked `git_dirty`, as all the earlier Kaggle full runs are. That fits the notebook rebuilding M2 and rewriting tracked reports, but the run stores no diff, so this is not proven. The saved experiment settings match `configs/default.yaml`. CSV rows only:
-
-  | method | window avg | avg excl. t0 | final (t5) | class forgetting | fit time | model size at t5 |
-  |---|---:|---:|---:|---:|---:|---:|
-  | Naïve incremental | 0.9211 | 0.9054 | 0.8979 | 0.0240 | 769 s | 16.4 MB |
-  | Local + rehearsal (500) | 0.9208 | 0.9051 | 0.8963 | 0.0233 | 770 s | 16.9 MB |
-  | **Local + rehearsal (2,000)** | 0.9208 | 0.9051 | 0.8965 | **0.0217** | 786 s | 17.3 MB |
-  | Local + rehearsal (8,000) | 0.9208 | 0.9050 | 0.8967 | 0.0189 | 835 s | 17.9 MB |
-  | Retrain per client | 0.9205 | 0.9046 | 0.8930 | 0.0168 | 2,360 s | 6.5 MB |
-  | E1 centralized (M3) | 0.8897 | 0.8677 | 0.8668 | 0.0277 | | |
-  | Static centralized (M3) | 0.4024 | 0.2829 | 0.1840 | n/a | | |
-
-- **Acceptance met on this seed, narrowly at the default size.** Forgetting falls from 0.0240 to 0.0217 at 2,000 rows and 0.0189 at 8,000; the buffer stays at 2,000 rows and 360 kB. At 500 rows the gain (0.0007) is within noise.
-- **At 2,000 rows nearly all of the gain is one class.** Spoofing goes from 0.020 to 0.009, and the other five classes move by at most 0.001. Spoofing's t5 F1 is lower with the buffer (0.802 vs 0.812), so the buffer protects the intro-window test set without helping the current one. The largest forgetting, DoS at 0.078, barely moves at any buffer size.
-- **The dev findings hold.** Rehearsal doesn't move macro-F1 (all five within 0.0006 on window average). Incremental matches retraining at 33% of the fit time, with models 2.5× larger by t5.
-- **Local-only is the bar for E3, and it is high:** it beats E1 by 0.031. The gain is again mostly DDoS and DoS: at t5, DDoS F1 is 0.906 vs 0.852 and DoS 0.755 vs 0.634 (local + rehearsal vs E1). The label-mix explanation remains untested.
-
-**Choices the proposal leaves open (additions):**
-- LightGBM continues boosting through `init_model` instead of the `refit` this plan first named, since `refit` can't add a class.
-- Stock LightGBM can't learn a class absent from its first fit, and the ensemble hides the failure. LightGBM therefore trains with softmax gradients and a floored Hessian, and `max_delta_step` = 10 bounds leaf outputs. A regression test checks each booster alone.
-- At most 50 rounds for a first fit and 50 per update, and a 2,000-row buffer per client. These budgets are assumptions. Retraining keeps M3's limit of 300 rounds.
-
-### M7: DA-FedDistill (proposed federated distillation)
-**Goal:** the core FL contribution (E3).
-- [x] Per window: local incremental update → soft predictions on D_pub → cloud aggregation (mean or reliability-weighted) → pseudo-labels (`scripts/m7_distill.py`, `fl/distill.py`)
-- [x] Global calibrator `g_t(p_xgb, p_lgbm, drift_features) → p_global`: softmax regression on log probabilities
-- [x] Send calibrator parameters and thresholds back; clients apply them at inference. Every g_t is logged in `calibrators.json`
-- [x] Keep DDoS from dominating the aggregation and calibrator, since it is 65% of D_pub (D2): class-balanced weights on D_pub rows, compared with unweighted
-- [x] Communication accounting (bytes per round, rounds), including compressing soft labels
-- [x] Also run the plain FedMD-style distillation baseline
-- [x] Full-pool run: `notebooks/m7_kaggle.ipynb`, each pass in its own process. The first attempt died after FedMD's t2 (see the progress log)
-- **Acceptance:** E3 is better than local-only, and its window-averaged macro-F1 is compared with E1, static and naïve incremental (tests H1). **Not met on the dev pool; met on the full pool's window average for one seed, but not at t4 or t5.**
-
-**Results, dev pool (2026-11-06)**: [`reports/m7/dev/DISTILL.md`](reports/m7/dev/DISTILL.md), [`reports/m7/dev/SEEDS.md`](reports/m7/dev/SEEDS.md)
-- Run: `python scripts/m7_distill.py --pool dev --set resources.n_jobs=4` (about 11 min, 1.2 GB peak), repeated with seeds 43 and 44. All E3 variants share one set of local models, and those match M6's `local_rehearsal` exactly in all three seeds, so differences between them come from g_t alone. The headline `e3` was fixed before any result: mean aggregation, class-balanced, drift features. Mean ± standard deviation, CSV rows only:
-
-  | method | window avg | final (t5) | class forgetting | mean ECE | window avg minus local, per seed | t5 minus local, per seed |
-  |---|---:|---:|---:|---:|---:|---:|
-  | Local + rehearsal (M6) | 0.9119 ± 0.0006 | 0.8820 ± 0.0021 | 0.0275 ± 0.0005 | 0.0098 | | |
-  | **E3 DA-FedDistill** | **0.9125 ± 0.0006** | **0.8782 ± 0.0017** | 0.0321 ± 0.0002 | 0.0141 | +0.0016, +0.0009, -0.0008 | -0.0028, -0.0037, -0.0049 |
-  | E3, reliability-weighted | 0.9124 ± 0.0010 | 0.8788 ± 0.0012 | 0.0329 ± 0.0006 | 0.0141 | +0.0018, +0.0011, -0.0012 | -0.0016, -0.0036, -0.0043 |
-  | E3, no drift features | 0.9125 ± 0.0004 | 0.8785 ± 0.0013 | 0.0327 ± 0.0007 | 0.0135 | +0.0013, +0.0011, -0.0005 | -0.0022, -0.0038, -0.0045 |
-  | E3, no class balance | 0.9023 ± 0.0036 | 0.8631 ± 0.0016 | 0.0456 ± 0.0060 | 0.0124 | -0.0065, -0.0135, -0.0087 | -0.0156, -0.0197, -0.0212 |
-  | E3, 8-bit uplink | 0.9062 ± 0.0018 | 0.8770 ± 0.0018 | 0.0312 ± 0.0010 | 0.0164 | -0.0064, -0.0063, -0.0043 | -0.0016, -0.0056, -0.0075 |
-  | E3 + client guard (addition) | 0.9157 ± 0.0001 | 0.8842 ± 0.0019 | 0.0293 ± 0.0006 | 0.0064 | +0.0045, +0.0039, +0.0031 | +0.0026, +0.0023, +0.0018 |
-  | FedMD-style digest | 0.8734 ± 0.0005 | 0.8450 ± 0.0026 | 0.0460 ± 0.0030 | 0.0384 | -0.0381, -0.0388, -0.0386 | -0.0318, -0.0395, -0.0396 |
-  | Naïve incremental (M6) | 0.9123 ± 0.0004 | 0.8818 ± 0.0017 | 0.0353 ± 0.0021 | | +0.0009, +0.0011, -0.0006 | +0.0015, +0.0001, -0.0020 |
-  | E1 centralized (M3, one seed) | 0.8844 | 0.8632 | 0.0370 | | | |
-  | Static centralized (M3, one seed) | 0.3460 | 0.0779 | n/a | | | |
-
-- **Acceptance is not met.** On window average, E3 is within noise of local-only (the sign changes across seeds). At t5 it is worse in all three seeds, and its forgetting is higher (0.0321 vs 0.0275).
-- **H1 on dev: supported against static (+0.57), not against naïve incremental.** E3 minus naïve is +0.0007, -0.0002 and -0.0002 per seed. E3 is 0.028 above E1, but that isn't like for like, as M6 explains.
-- **g_t helps early and hurts later.** Against local-only in seeds 42/43/44: t1 +0.018, +0.016, +0.008 and t2 +0.009, +0.008, +0.006, but t3 to t5 and t0 are all slightly negative (up to -0.007). The t5 gains on DoS (0.763 vs 0.741) and DDoS (0.924 vs 0.902) are outweighed by benign (0.790 vs 0.830).
-- **The benign loss is missed attacks, not false alarms.** Benign recall stays level (0.872 vs 0.860 at t5), while precision falls (seed 42: 0.720 vs 0.798). So more attacks are labelled benign. This doesn't count against H3's false-positive claim, but it is the wrong kind of error for an IDS.
-- **Why E3 stalls, as far as the data shows.** The consensus does hold knowledge that clients lack: on D_pub (seed 42) pseudo-labels score 0.82–0.87 from t1 on, against 0.72–0.76 for a mean client. But g_t sees only a client's own two probability vectors, and closes 0.016–0.040 of that gap of 0.09–0.14. It improves all windows on D_pub's global mix, and on clients' own rows it helps some and hurts others (at t5, 6, 7 and 3 of 15 clients improve). That fits M6's label-mix explanation, and so does FedMD: pulling the trees toward a global consensus costs 0.038, with DoS falling to 0.632. This is consistent with that explanation, not a test of it.
-- **The guard is the one variant better than local-only in every seed**, on window average and at t5, and also on ECE. Clients accept g_t in only 0–7 of 15 cases per window. Its gains are small, its forgetting (0.0293) is still above local-only, and two caveats apply: the choice uses validation rows that also set early stopping, and the variant was designed after seeing the seed 42 per-client table. See D9.
-- **Class balance matters, as D2 warned.** Removing it costs 0.010 on window average and 0.015 at t5. Reliability weighting and drift features change nothing measurable; both stay in because the proposal names them, and the M14 ablations can confirm it.
-- **Calibration bug found and fixed.** The first run's g_t had a mean ECE of 0.194 against 0.0097 local, since its target is a mean over clients and so is soft. Each client now fits a temperature on its own rows. Temperatures of 0.14–0.29 confirm the underconfidence, ECE falls to 0.014, and macro-F1 is unchanged as expected.
-- **Communication (15 clients, 6 rounds).** E3 at t5 costs 0.313 MB per client per round up as float32 and 392 bytes down, 22.6 MB up in total. 8-bit + zlib cuts the upload to 1.6 MB, but **that compression is not free**: it costs 0.006 on window average. On the full pool, float32 works out at 4.3 MB per client per round (computed, not yet measured). g_t adds about 0.4 µs per flow at inference.
-- **Gate (seed 42).** The cloud's thresholds kept test escalation under the 10% budget in all cases (highest 9.8%). The t1 blind spot remains: the t0 model facing t1 traffic has a 0.730 error rate, escalates 1.6% of flows and catches 1.9% of its errors, see D8.
-
-**Results, full pool (2026-11-06)**: [`reports/m7/full/DISTILL.md`](reports/m7/full/DISTILL.md)
-- Run: Kaggle at `b67af92`, one seed, 4 threads, settings the same as the repo config. E3 took 62 min and FedMD 61 min, with a peak of 4.2 GB out of 31.3 GB. `git_dirty` is true, as on the earlier Kaggle full runs.
-
-  | method | window avg | final (t5) | class forgetting | mean ECE |
-  |---|---:|---:|---:|---:|
-  | Local + rehearsal (M6) | 0.9210 | 0.8972 | 0.0218 | 0.0081 |
-  | **E3 (headline)** | **0.9257** | **0.8947** | **0.0245** | **0.0054** |
-  | E3, reliability-weighted | 0.9248 | 0.8939 | 0.0236 | 0.0054 |
-  | E3, no class balance | 0.9208 | 0.9004 | -0.0003 | 0.0079 |
-  | E3, no drift features | 0.9237 | 0.8968 | 0.0172 | 0.0057 |
-  | E3, 8-bit uplink | 0.9255 | 0.8956 | 0.0220 | 0.0062 |
-  | E3 + client guard (addition) | 0.9288 | 0.8986 | 0.0249 | 0.0044 |
-  | FedMD-style digest | 0.8872 | 0.8598 | 0.0324 | 0.0568 |
-  | Naïve incremental (M6) | 0.9211 | 0.8979 | 0.0240 | |
-  | E1 centralized (M3) | 0.8897 | 0.8668 | 0.0277 | |
-  | Static centralized (M3) | 0.4024 | 0.1840 | n/a | |
-
-- **Acceptance is met on window average for this seed, and the gain does not last.** E3 beats local-only by 0.0047, but by window the difference is t0 -0.0002, t1 +0.021, t2 +0.014, t3 +0.005, t4 -0.008, t5 -0.003. Forgetting is higher (0.0245 vs 0.0218), and 3 of 5 drops recover against 4 of 5 for local-only. The shape matches dev, where g_t also helps early and hurts later, but the full pool's early gain is larger. Dev and full disagree on the window average, and this is one seed, so this is not a settled win.
-- **H1 on the full pool:** supported on window average against static (+0.523) and naïve (+0.0046), but E3 is below naïve at t5 (-0.0033). E3 is 0.036 above E1, which isn't like for like, as M6 explains.
-- **Most clients lose from t3 on.** Clients improved by g_t: 9 of 15 at t1, 8 at t2, 6 at t3, 1 at t4, 6 at t5. The mean change per client is negative at t3, t4 and t5 (-0.014, -0.022, -0.008). At t3, the pooled score rises while the mean client falls, so pooled macro-F1 hides this.
-- **Per class at t5:** E3 gains on DDoS (0.925 vs 0.906) and DoS (0.776 vs 0.755), and loses on Spoofing (0.769 vs 0.806) and benign (0.940 vs 0.952). Benign precision falls more than recall (0.940 vs 0.959, and 0.940 vs 0.945).
-- **The guard is ahead of local-only in four of six windows**, level at t0 and -0.002 at t4: 0.9288 on window average, 0.8986 at t5. Clients accept g_t in 1, 9, 11, 8, 3 and 6 of 15 cases. The two dev caveats still apply: it was designed after seeing results, and its validation rows also set early stopping. See D9.
-- **g_t recovers little of what the consensus knows.** On D_pub from t1 on, pseudo-labels score 0.82–0.89 against 0.72–0.81 for a mean client, and g_t closes 0.007–0.023 of that gap of 0.08–0.10.
-- **Several dev findings changed size on the full pool.** The 8-bit uplink cost 0.006 on dev, and costs 0.0002 here. Drift features had no measurable effect on dev, and add 0.002 here on window average, though they are behind at t5. Class balance adds 0.005 on window average but is behind at t5, and at t4 its absence costs 0.031. Reliability weighting is again no better than the mean.
-- **FedMD is worse than doing nothing:** 0.034 below local-only, and slightly below E1, with an ECE of 0.057.
-- **Communication (15 clients, 6 rounds).** E3 at t5 costs 4.34 MB per client per round up as float32, matching the 4.3 MB computed earlier, and 392 bytes down. The whole run is 338.6 MB up as float32 and 16.6 MB as 8-bit + zlib, and 35.3 kB down. g_t adds about 0.7 µs per flow at inference.
-- **Gate.** Test escalation stayed under the 10% budget in all cases (highest 9.7%). E3 has fewer errors than local-only under the same thresholds (t5: 0.103 vs 0.123), and catches a slightly smaller share of them (0.278 vs 0.293). The t1 blind spot remains: the t0 model facing t1 traffic has a 0.741 error rate, escalates 0.2% of flows and catches 0.2% of its errors, see D8.
-- **The local models don't match M6 exactly here.** They are the same through t2, and from t3 on single cells differ by up to 0.0015, which moves the window average by 0.00013. Code, library versions and thread count are the same, and the cause isn't known. All E3 comparisons with local-only are paired within this run, so this doesn't touch them. The naïve row comes from M6's run.
-
-**Second full-pool seed (2026-11-06, Kaggle, seed 43)**: [`reports/m7/full/SEEDS.md`](reports/m7/full/SEEDS.md), [`reports/m7/full/seed43/DISTILL.md`](reports/m7/full/seed43/DISTILL.md)
-
-- Run at `e1f265b`, about 2 h 5 min in three separate processes, with no crash. The config differs from seed 42 only in the seed. Only the report, per-client table and summary are kept in the repo, as for the dev seeds.
-
-  | method | window avg | final (t5) | class forgetting | window avg minus local, per seed | final minus local, per seed |
-  |---|---:|---:|---:|---:|---:|
-  | Local + rehearsal (M6) | 0.9209 ± 0.0000 | 0.8968 ± 0.0005 | 0.0215 ± 0.0005 | | |
-  | **E3 (headline)** | **0.9254 ± 0.0004** | **0.8948 ± 0.0001** | **0.0268 ± 0.0032** | +0.0047, +0.0042 | -0.0025, -0.0016 |
-  | E3, no class balance | 0.9215 ± 0.0011 | 0.9002 ± 0.0003 | 0.0050 ± 0.0075 | -0.0002, +0.0014 | +0.0032, +0.0035 |
-  | E3 + client guard (addition) | 0.9286 ± 0.0003 | 0.8983 ± 0.0003 | 0.0241 ± 0.0011 | +0.0078, +0.0074 | +0.0014, +0.0016 |
-  | FedMD-style digest | 0.8872 ± 0.0000 | 0.8598 ± 0.0000 | 0.0327 ± 0.0005 | -0.0338, -0.0337 | -0.0374, -0.0367 |
-
-- **The seed 42 result repeats, so the dev and full gap isn't seed noise.** E3 beats local-only on window average by about ten times the spread between these two seeds, and is behind at t5 in both. By window, seed 43 gives t0 -0.0004, t1 +0.018, t2 +0.013, t3 +0.002, t4 -0.006, t5 -0.002, the same shape as seed 42. The seed leaves the partition fixed, and two seeds give only a rough spread.
-- **The guard is ahead of local-only at t1, t2, t3 and t5 in both seeds.** It is level at t0, and at t4 the sign changes (-0.002, +0.002). The caveats in D9 still apply.
-- **Without class balance, E3 is ahead at t5 in both seeds** (+0.0032, +0.0035), with lower forgetting, though it dips at t4 in both (0.873, 0.882). This is the reverse of dev, where removing class balance cost 0.015 at t5. It was not the rule fixed before the results, so it stays a variant.
-- **Per client, the pattern also repeats.** Clients improved by g_t: 8 of 15 at t1, 7 at t2, 5 at t3, 3 at t4, 6 at t5. The mean change per client is negative at t3, t4 and t5 (-0.023, -0.019, -0.002).
-- **The gate's budget was exceeded once on the test rows.** E3 with the model through t2, facing t3 traffic, escalates 10.6% of flows. With the model of the current window, its highest is 7.3%. Seed 42's highest was 9.7%. The t1 blind spot remains (0.741 error rate, 0.2% escalated), see D8.
-- **No naïve row here.** M6 was not run on the full pool at seed 43, so naïve incremental stays a one-seed comparison. The user decided on 2026-11-06 that this comparison isn't needed, so no M6 run will be added for it.
-
-**Choices the proposal leaves open (additions):**
-- g_t is a softmax regression on log probabilities with L2 toward the plain mean of the two boosters, fitted on at most 200,000 sampled (client, public row) pairs. Drift features: booster disagreement, entropy, the client's share of features over the PSI alert.
-- Reliability is each client's per-class F1 on its own validation rows. FedMD adds 10 rounds per client per window. These budgets are assumptions.
-- Client temperature after g_t, and `e3_guard`, are both additions, explained above. The cloud's thresholds use the same 10% budget as M5, which is still an assumption.
-- Class balance uses pseudo-labels, as D2 hides D_pub's true labels. These are read only for the pseudo-label table. D_pub's cumulative window filter uses `intro_window`, which is a simulation device derived from the true classes.
-
-### M8: Neural FL baselines (FedAvg / FedProx MLP)
-**Goal:** the classic FL references (E2).
-- [x] MLP in torch (CPU), same partitions and timeline (`src/ids/fl/fedavg.py`, `scripts/m8_fedavg.py`)
-- [x] FedAvg and FedProx (μ sweep), each with and without incremental training
-- [x] Full-pool run: `notebooks/m8_kaggle.ipynb`, each pass in its own process. A first run at lr 0.1 was unstable (below), so the notebook chooses the rate on the full pool first
-- **Acceptance:** E2 results appear in the same table format as E3.
-
-**Results, dev pool (2026-11-06)**: [`reports/m8/dev/FEDAVG.md`](reports/m8/dev/FEDAVG.md), [`reports/m8/dev/SEEDS.md`](reports/m8/dev/SEEDS.md)
-
-- Run: `python scripts/m8_fedavg.py --pool dev --set resources.n_jobs=4` (about 4 min, 1.2 GB), repeated with seeds 43 and 44. Same partitions, test rows, rehearsal buffers and validation rows as E3. Scores use CSV-only rows (D7). A dev run split as the notebook splits it (`--only`, then `--report`) reproduces `results.csv` exactly.
-
-  | method | window avg | final (t5) | class forgetting | window avg minus E3, per seed | final minus E3, per seed |
-  |---|---:|---:|---:|---:|---:|
-  | **E2 FedAvg, incremental (headline)** | **0.8156 ± 0.0096** | **0.7618 ± 0.0074** | **0.1048 ± 0.0076** | -0.0889, -0.1075, -0.0943 | -0.1098, -0.1151, -0.1242 |
-  | E2 FedAvg, none (t0 only) | 0.3384 ± 0.0019 | 0.0747 ± 0.0003 | n/a | -0.5758, -0.5752, -0.5712 | -0.8024, -0.8054, -0.8026 |
-  | FedAvg, no rehearsal (addition) | 0.8149 ± 0.0088 | 0.7668 ± 0.0088 | 0.1015 ± 0.0124 | -0.0901, -0.1071, -0.0956 | -0.1024, -0.1229, -0.1088 |
-  | FedProx, incremental (μ 0.1) | 0.8236 ± 0.0017 | 0.7703 ± 0.0053 | 0.1090 ± 0.0078 | -0.0886, -0.0909, -0.0870 | -0.1081, -0.1140, -0.1014 |
-  | FedProx, none (t0 only) | 0.3384 ± 0.0019 | 0.0747 ± 0.0002 | n/a | -0.5758, -0.5752, -0.5712 | -0.8023, -0.8055, -0.8026 |
-  | E3 DA-FedDistill (M7) | 0.9125 ± 0.0006 | 0.8782 ± 0.0017 | 0.0321 ± 0.0002 | | |
-  | Local + rehearsal (M6) | 0.9119 ± 0.0006 | 0.8820 ± 0.0021 | 0.0275 ± 0.0005 | | |
-  | FedMD-style digest (M7) | 0.8734 ± 0.0005 | 0.8450 ± 0.0026 | 0.0460 ± 0.0030 | | |
-  | E1 centralized (M3, one seed) | 0.8844 | 0.8632 | 0.0370 | | |
-
-- **Acceptance is met:** E2 is reported in E3's table format. Updating matters far more than the choice of method: from about 0.34 without updates to about 0.82 with them.
-- **E3 is well ahead of classic FL on this pool.** FedAvg is 0.089 to 0.108 below E3 on window average in every seed, and 0.110 to 0.124 below at t5. Its class forgetting is three times E3's (0.105 vs 0.032), and its mean ECE is 0.061 to 0.076 against 0.013 to 0.016.
-- **This doesn't show that distillation is what helps.** Local + rehearsal, with no collaboration, is just as far ahead of FedAvg (M7 found E3 level with it on dev). The result fits tree models beating this small MLP on these features, one global model against a model per client, or both, and this design can't separate them. FedAvg is also below E1, the other single global model, by 0.060 to 0.079, so trees are at least part of it.
-- **The gap is largest in DoS** at t5 for seed 42 (F1 0.448 vs 0.761), then Spoofing (0.709 vs 0.860).
-- **FedProx is no worse, and its edge over FedAvg isn't clear.** μ 0.1 had the best validation score in all three seeds. FedProx is ahead of FedAvg by +0.0003, +0.0165 and +0.0073 on window average, and much of that comes from FedAvg's larger spread between seeds (0.0096 vs 0.0017). μ 1 is too strong, at 0.7906.
-- **Rehearsal adds nothing measurable here.** Window average differs by -0.0011, +0.0004 and -0.0013 without it, and forgetting is the same within the spread. The cause isn't known. M6 found a similarly small effect for trees on macro-F1, though there it did lower forgetting.
-- **Communication depends on the pool.** FedAvg sends 57 kB each way per client per round, and 173 to 204 MB up and down over the whole dev run, with 101 to 119 rounds. E3 sends 22.6 MB up on dev, so it's cheaper here. Its cost grows with D_pub (338.6 MB on the full pool as float32), and FedAvg's grows with rounds, so the full pool may reverse this before compression. To be measured.
-
-**Choices the proposal leaves open (additions):**
-- The proposal names FedAvg and FedProx with an MLP and sets none of the settings. Hidden layers [128, 64], 1 local epoch, SGD with momentum 0.9, batch 512, patience 5, a class-balanced loss per client and a temperature fitted on validation rows are assumptions. So is signed-log scaling, with statistics from t0 only, built from per-client totals.
-- `lr 0.1` and up to 50 rounds were chosen on validation rows only, FedAvg, seed 42, before the other passes were run. The sweep's highest rate didn't win, so it wasn't cut off by the range. Test scores for three of these runs were printed before the choice, though the rule looks only at validation. These were not tuned: the architecture, epochs and batch size, so a better MLP could close part of the gap. Fair use in the paper is "this MLP", not "any neural FL".
-
-  | lr | rounds at most | mean best validation macro-F1 | excl. t0 |
-  |---:|---:|---:|---:|
-  | 0.01 | 20 | 0.7874 | 0.7487 |
-  | 0.03 | 20 | 0.8245 | 0.7921 |
-  | 0.03 | 50 | 0.8276 | 0.7945 |
-  | 0.1 | 20 | 0.8382 | 0.8062 |
-  | **0.1** | **50** | **0.8388** | **0.8068** |
-  | 0.2 | 20 | 0.8350 | 0.8020 |
-  | 0.2 | 50 | 0.8350 | 0.8020 |
-  | 0.3 | 20 | 0.8305 | 0.7966 |
-
-- "None" in the proposal's E2 row is the t0 model, never updated. "Incremental" doesn't say whether to rehearse, so the headline matches E3 (new rows + buffer), and `fedavg_no_rehearsal` is an addition.
-- Lr and rounds above were chosen on the dev pool, for the dev pool. The full pool gets its own rate, as below.
-
-**Results, full pool (2026-11-07, Kaggle, seeds 42 and 43, lr 0.03)**: [`reports/m8/full/FEDAVG.md`](reports/m8/full/FEDAVG.md), [`reports/m8/full/SEEDS.md`](reports/m8/full/SEEDS.md), [`reports/m8/full/LR_SWEEP.csv`](reports/m8/full/LR_SWEEP.csv)
-
-- Run at `e05ff79`, 4 threads, 3 h 40 min in one notebook: 85 min for the sweep, then both seeds. Peak 4.5 GB of 31.3 GB, all 22 runs ended without error, and the configs differ only in seed and rate.
-- **`git_dirty` is true on all 22 runs, and the check below reproduces it from three redrawn figures.** `notebooks/m8_dirty_check.ipynb` repeated the setup on Kaggle at `e05ff79` ([`reports/m8/full/dirty_check.json`](reports/m8/full/dirty_check.json)). `git status` is clean after the clone and after the install. After the M2 step only `client_class_share.png`, `client_jsd.png` and `window_class_counts.png` in `reports/m2/full` differ, with no text change. Nothing in `src`, `scripts`, `configs` or `tests` reads them, so they can't reach a result. This was a separate session: the 22 runs don't list their own changed files, so it's a reproduction of the same steps, not a record from those runs. Why the bytes differ wasn't tested (matplotlib is 3.10.0 on Kaggle and 3.11.2 locally). The notebooks now restore these three files after M2, and `git_changed` in `environment.json` records anything else.
-- **Checked from the raw outputs (2026-11-07):** macro-F1 recomputed from the confusion counts matches `results.csv` for all 528 cells and `summary.json` for every method and seed. The window averages of the E3, guard, local and FedMD rows match the tracked M7 reports (other columns not compared). The partition rebuilt at `e05ff79` on this PC matches `data/splits/full` row for row. **The partition rebuilt on Kaggle is the same, row for row, as the local one in all 6 files**, despite different numpy and pandas versions (`dirty_check.json`). The M2 code and its settings haven't changed since `4521a07`, the first full Kaggle run, so the earlier full runs should have the same partition if the same input dataset was attached; those runs weren't fingerprinted. The claim that M8 shares E3's validation rows and buffers rests on the shared seed keys in the code (`scripts/m8_fedavg.py:62,76`), not on a comparison of the rows.
-- **Rate, from validation rows only:**
-
-  | lr | mean best validation, seed 42 | seed 43 | mean |
-  |---:|---:|---:|---:|
-  | 0.003 | 0.8331 | 0.8322 | 0.8327 |
-  | 0.01 | 0.8334 | 0.8385 | 0.8359 |
-  | **0.03** | **0.8536** | **0.8498** | **0.8517** |
-  | 0.1 | 0.8397 | 0.7020 | 0.7709 |
-
-  Lr 0.1 repeated the first run's validation scores and round counts, including 0.466 at seed 43's t2, so that collapse is reproducible and not a one-off. At 0.03 none of the 12 passes collapses. This is a coarse grid and two seeds, so 0.03 is the best tested rate, not a proven optimum, and how close it sits to the unstable region is not known. The rate was tuned on FedAvg only and FedProx reuses it.
-- **E2 is well below E3 on the full pool too:**
-
-  | method | window avg | final (t5) | class forgetting |
-  |---|---:|---:|---:|
-  | FedAvg, incremental | 0.8434 ± 0.0029 | 0.7816 ± 0.0014 | 0.0695 ± 0.0025 |
-  | FedAvg, no rehearsal (addition) | 0.8456 ± 0.0042 | 0.7926 ± 0.0060 | 0.0676 ± 0.0098 |
-  | FedProx, μ picked on validation | 0.8425 ± 0.0021 | 0.7813 ± 0.0007 | 0.0755 ± 0.0119 |
-  | FedAvg, t0 model never updated | 0.3704 ± 0.0023 | 0.1327 ± 0.0024 | n/a |
-  | E3 DA-FedDistill (M7) | 0.9254 ± 0.0004 | 0.8948 ± 0.0001 | 0.0268 ± 0.0032 |
-  | Local + rehearsal (M6) | 0.9209 ± 0.0000 | 0.8968 ± 0.0005 | 0.0215 ± 0.0005 |
-
-- FedAvg trails E3 by 0.0802 and 0.0838 on window average and by 0.1120 and 0.1143 at t5. At t5 on seed 42 the gap is widest on DoS (0.570 against 0.776) and spoofing (0.523 against 0.769).
-- **This doesn't show that distillation beats FedAvg.** Local boosters with no federation are just as far ahead (0.0755 and 0.0795), as on dev. The comparison mixes the model family with the federation method, and only the rate of this MLP was tuned on the full pool, so the claim stays "this MLP".
-- **FedAvg and FedProx can't be separated.** FedAvg minus FedProx is +0.0045 at seed 42 and -0.0027 at seed 43, and the picked μ differs (0.01, then 0.001). Stronger μ is clearly worse: 0.8261 at 0.1 and 0.8108 at 1. FedProx's lead on dev (0.8236 against 0.8156) doesn't hold here.
-- **Rehearsal doesn't help FedAvg.** No rehearsal is ahead on both seeds, by 0.0031 and 0.0012 on window average and 0.0142 and 0.0078 at t5. On dev the window average shows no difference (0.8149 against 0.8156), and neither does M6's naive incremental row (0.9211 against 0.9210, seed 42). The cause isn't tested. The two passes also stop early on different validation rows, because the no-rehearsal pass has no buffer rows to draw from (`scripts/m8_fedavg.py:71-77`). The test rows are the same.
-- **Communication:** FedAvg sends 227.9 and 186.8 MB up and down over the run, as float32 (133 and 109 rounds), and the difference is only early stopping. E3 at seed 42 sends 338.6 MB up as float32, or 16.6 MB as 8-bit + zlib, and 35.3 kB down. FedAvg's weights weren't compressed, so 16.6 MB against about 200 MB isn't like for like, and uncompressed E3 uploads more than FedAvg.
-- Training is steady across seeds but early stopping isn't: rounds per window range from 6 to 42, and at seed 42's t4 the first round of the window is the best one. Scores don't show a collapse from this.
-- **Acceptance met:** E2 is in the same table format as E3, on the same partitions, test rows and buffers.
-
-**First full-pool run, not the result (2026-11-07, Kaggle, seeds 42 and 43, lr 0.1)**: [`reports/m8/full/lr0.1/SEEDS.md`](reports/m8/full/lr0.1/SEEDS.md), [`reports/m8/full/lr0.1/FEDAVG.md`](reports/m8/full/lr0.1/FEDAVG.md)
-
-- Run at `cacb3d1`, 54 and 61 min, with no crash and no config difference other than the seed. **Training is unstable at this rate, so these scores don't measure FedAvg fairly.** FedAvg gets 0.8267 and 0.6063 on window average. At seed 43's t2 it falls to 0.292, with its best round at 0, and doesn't recover. Without rehearsal it reaches 0.4408 and 0.3854, with F1 0.000 on benign at seed 42's t5. FedProx at μ 0.001 falls to 0.597 at seed 42's t4.
-- **The validation rows show the same collapse** (0.466 at seed 43's t2, against about 0.82 in the stable passes), so this is a training failure and not a problem in the test rows or the report.
-- **The likely cause, supported but not isolated by the sweep above (a lower rate removes the collapse; step count itself wasn't varied):** the full pool has 11 to 18 times the rows per window, so a round has that many more SGD steps than on dev, where lr 0.1 was chosen. The early stopping also can't go back to the model a window started from, so a collapse in the first rounds is kept and carries into the next window.
-- **FedAvg vs FedProx can't be read from this run.** FedProx at μ 0.01 gets 0.8340 ± 0.0025 and looks far ahead of FedAvg's 0.7165 ± 0.1558, but μ 0.001 and FedAvg fail at random, and μ 0.01 is too weak a pull for this to be clearly the proximal term at work. Even so, every stable pass is about 0.09 or more below E3 (0.9254).
-- **The fix:** `scripts/m8_lr_sweep.py` runs FedAvg at lr 0.003, 0.01, 0.03 and 0.1 on seeds 42 and 43, and takes the highest mean validation score over windows and seeds. The rule was fixed after seeing this run, but before any result at the other rates, and it reads no test rows. `notebooks/m8_kaggle.ipynb` then runs all passes at that rate.
-
-### M9: Drift-triggered updates, feature selection, adaptive threshold
-**Goal:** E4, drift-aware scheduling and feature focus, plus the gate's adaptive threshold.
-- [x] Updates triggered by ADWIN instead of a fixed per-window schedule (`scripts/m9_e4.py`)
-- [x] Top-K features by mutual information per window (K sweep)
-- [x] Sensitivity run (D8): a PSI-based drift flag in the gate against the proposal's rule, reported and not a headline
-- [x] Drift score from cloud to edge (`Proposal explanation.docx`, Methodology Step 5: "The drift score is sent back to the edge so that an adaptive threshold can be used in the subsequent inference"): the cloud's ADWIN monitor turns each client's label-free ADWIN signals into a score, sent down with g_t and τ, and its bytes count in communication
-- [x] Adaptive threshold: each client's τc and τd for the next window depend on its drift score, and a score of 0 gives exactly the fixed gate
-- [x] Fixed against adaptive gate, on current-window and next-window rows: escalation rate, errors caught, accuracy on the rest, and whether it helps the t1 blind spot (D8), reported against the 10% target (D10)
-- [x] Full-pool run: `notebooks/m9_kaggle.ipynb`, each pass in its own process, seeds 42 and 43
-- **Acceptance:** E4 vs E3 comparison of time-to-recover and performance variance (tests H2), and the fixed vs adaptive gate comparison above.
-
-**Why the adaptive threshold is here (checked 2026-11-07).** Nothing built so far does this:
-- **M5:** ADWIN fires a hard flag that escalates the next 200 flows of a client. τc and τd don't change, and this exists only in M5's offline evaluation.
-- **M7:** the cloud re-picks τc and τd each window, on D_pub, for the escalation budget. They are one global pair and no drift score goes into the choice. M7's gate doesn't use a drift flag either.
-- **M7's drift features:** each client's PSI share is an input to g_t, so drift can move the probabilities and, through them, confidence. It doesn't move a threshold, and it is PSI, not the ADWIN score.
-
-**Design, fixed on 2026-11-07 before any E4 result (the user asked to start M9; the choices below are mine, and all but those marked as the proposal's are additions).**
-
-*What the proposal fixes:* E4 is DA-FedDistill with a "drift-triggered update schedule (ADWIN)" and "MI-driven top-K". ADWIN runs on the "rolling error rate for a client (when labels available in evaluation)" or on entropy or disagreement as a label-free proxy. Time-to-recover is "number of rounds/windows to return to within ε of pre-drift performance". H2 says ADWIN reduces time-to-recover and stabilizes variance across windows.
-
-*Schedule: updates inside a window.* E3 updates at every window, so a trigger at window level could only match it or lag behind it, and H2 could never hold, whatever the data showed. So a window's rows reach each client in 10 rounds, in random order, as the dataset has no timestamps. E3's schedule updates once, at the end of the window, and the old model serves until then. In E4:
-- each round is scored by the current model, and its signal feeds that client's ADWIN, which restarts after each update from the new model's own level on held-out new rows;
-- a rise triggers an update at once, on the rows held so far plus the buffer, and one more at the end of that window on the rest, so a triggered client has trained on the whole window by its end;
-- a client whose ADWIN stays quiet doesn't update and keeps its rows for its next update, which is where the saving comes from;
-- between its update and the next g_t, the client uses its own calibrated output, because the old g_t predates the new classes. The cloud refits g_t only at the end of a window, so mid-window cloud cost is not added.
-
-*Trigger signal: the error rate*, the first signal the proposal names. Clients train on these rows, so they have the labels, and on the full pool (M5) it catches all 33 affected clients with no false alarms, while disagreement catches 16. `e4_label_free` runs the same schedule on disagreement as a sensitivity run. M5 says it should stay silent at t1.
-
-*Top-K:* each client ranks features by mutual information on its own training rows, at each update (500 rows per class at most), and sends nothing. K is one of 10, 20 or 30 out of 43, picked on the fixed schedule by the best mean validation macro-F1 and repeated per seed. **It limits new trees only:** older trees keep their splits, so inference still needs all 43 features, and this is not a saving at inference. Continued boosting rules out dropping columns from the rows, as the old trees would then compute wrong margins. The script stops with an error if a new tree splits on a feature outside the set.
-
-*Passes, so each factor can be read alone:* `fixed` (no factor; must reproduce E3), `fixed_k*` (top-K only), `e4_schedule` (trigger only), `e4` (both; the headline, as E4 is defined with top-K even if all features score higher), `e4_label_free`. Each is also reported with `e3_guard`'s rule (D9), and without g_t.
-
-*Changed after the first dev run, before any full-pool result:*
-- **`e4_added` is a new pass.** H2 says "adding" drift-triggered adaptation, and the matrix says a drift-triggered schedule, so the proposal reads both ways. On dev, clients whose ADWIN stays quiet keep a stale model, which costs accuracy at the end of a window. In `e4_added` every client still updates at the end of each window and a trigger only adds an early update, at the cost of more updates. `e4` stays the headline, as the matrix's reading; which to carry forward is for the user to decide on the full-pool results.
-- **Recovery is also measured against E3's earlier score.** A method measured against its own earlier score looks recovered sooner if it has already fallen.
-- **`fixed gate at the same cost` is a new measure.** The strength rule keeps choosing λ = 0, as the fixed gate is already near 10% on next-window rows. The rule isn't changed. The new column shows whether the drift score catches more errors than a fixed gate loosened to the same escalation rate.
-- **Limiting XGBoost's new trees:** `feature_weights` is not absolute, as the script's check found in a real run, and `interaction_constraints` doesn't restrict features outside its sets (tested). An update that leaks a feature now trains again with another seed, so the limit is a hard one.
-- **A bug fixed in the PSI flag:** it compared CSV rows with a baseline that holds profiling rows, so it fired even with no shift (69% escalated at t0 on t0 rows).
-
-*H2's measures, fixed now:* per boundary, the share of the window's rounds until macro-F1 on that window's test rows is back within ε = 0.02 of the score before the boundary; macro-F1 averaged over the rounds; and the SD of window scores over t1 to t5. E3's curve comes from its M7 scores: the old model until the end of the window, then the new one. Window average, t5 and forgetting are also reported, as the trigger may cost accuracy, along with updates and communication. A client that didn't update resends predictions only for public rows new in that window.
-
-*Drift score (explanation document, Step 5):* for each client's inference stream, the largest rise ADWIN has reported so far on disagreement or entropy, in [0, 1], and 0 until then. It starts each new window at the value the last boundary ended on. It is ADWIN's estimate at the moment it fires, with old rows still in its window, so it understates the true rise. It adds 4 bytes per client per window to the downlink. No network delay is modelled.
-
-*Adaptive threshold:* with a = min(1, λ·score), τc' = τc + a(1 − τc) and τd' = τd(1 − a), so a score of 0 gives exactly the fixed gate, and a higher score only adds escalations (both are tested). τc and τd are still the cloud's values from M7.
-
-*Strength λ:* one of 0, 1, 2, 4, 8 or 16 for the whole run, with the most errors caught on held-out rows of the next window, with mean escalation at or under the 10% target (D10), ties to the weaker. If nothing fits, λ = 0. These rows are later training rows, which the model scoring them hasn't seen, and no test row is read. The test table shows every strength.
-
-*Gate modes on test rows:* `thresholds_only` (M7's gate), `fixed` (adds the proposal's ADWIN flag on disagreement, 200 rows, the headline under D8), `adaptive`, and `psi_flag` (D8's sensitivity run: a client's rows are all escalated when at least 10% of its features pass the PSI alert, as in M5). It may not help at t1, as the old model there is confidently wrong and M5 found ADWIN silent on these signals. The comparison reports what it does either way.
-
-**Results, dev pool (2026-11-07, seed 42 only)**: [`reports/m9/dev/E4.md`](reports/m9/dev/E4.md)
-
-- One seed on a 5% sample, so these are for checking the method, and the differences have no noise estimate. `fixed` reproduces M7's E3, guard and local rows with a difference of 0.0 in every window, and the reported scores match a recomputation from the confusion counts.
-- **Replacing the fixed schedule costs accuracy on dev:**
-
-  | method | window avg | final (t5) | SD, t1 to t5 | macro-F1 over rounds, mean of t1 to t5 | local updates | uplink, float32 (MB) |
-  |---|---:|---:|---:|---:|---:|---:|
-  | E3 | 0.9130 | 0.8768 | 0.0127 | 0.6267 | 90 | 22.6 |
-  | E4: trigger + top-30 | 0.8085 | 0.8081 | 0.1313 | 0.7855 | 97 | 13.3 |
-  | Trigger added to the fixed schedule, top-30 | 0.9079 | 0.8731 | 0.0135 | 0.8196 | 127 | 22.6 |
-  | Trigger on disagreement, all features | 0.6818 | 0.6517 | 0.1693 | 0.6108 | 58 | 10.4 |
-
-- **H2 is mixed so far.** Service during a window is clearly better with a trigger, as the old model isn't kept until the window ends. But apart from one case, no method gets back to E3's earlier score before the end of a window, so time-to-recover by that measure doesn't improve. The case is `e4` at t3, after one round, with rows it held back from t2 to train on. Variance across windows is about ten times worse with `e4`, and about the same with the trigger added.
-- **Why `e4` loses at window ends:** only 3 of 15 clients update at t2, 4 at t4 and 5 at t5, and the others keep older models. The likely reason, not tested: a new class that is a small share of a client's rows moves its error rate too little for ADWIN, while macro-F1 weighs that class fully. The full pool shows the same pattern (below).
-- **Label-free trigger:** 0 of 15 clients fire at t1, the same blind spot as D8, so the model stays at the old one's 0.451 for that whole window.
-- **Top-K costs a little and saves nothing measured here:** validation rises with K (0.9033, 0.9119, 0.9178), so 30, the top of the grid, is picked, and all 43 features score about the same (window average 0.9130 against 0.9127). Inference still needs all features.
-- **The drift score adds nothing clear:** the rule picks λ = 0 for `e4`, so the adaptive gate is the fixed gate there. On next-window test rows, at λ = 16 it catches 0.430 of errors at 26.4% escalated, and a fixed gate loosened to the same rate catches 0.420. On validation rows the order reverses (0.326 against 0.356). The score is silent at t1, so the blind spot stays: 0.019 of errors caught at 1.6% escalated.
-- **PSI flag (D8's sensitivity run):** it does see t1, catching 0.979 of errors, but by escalating 93.8% of rows, and at the later boundaries it escalates 9%, 49%, 34% and 63%, catching 21%, 66%, 52% and 80% of errors.
-
-**Results, full pool (2026-11-08, seeds 42 and 43 on Kaggle)**: [`reports/m9/full/E4.md`](reports/m9/full/E4.md), [`seed43/E4.md`](reports/m9/full/seed43/E4.md), [`SEEDS.md`](reports/m9/full/SEEDS.md)
-
-- **Runs:** 18 runs at `4262f99` (8 passes and a report per seed), 4 threads, about 7.5 h per seed. All have `git_dirty` false and no changed files, and the library versions match M7's runs. I recomputed every method's window average and t5 from the confusion counts, and all match the reports. The feature limit needed no XGBoost retry in any pass.
-- **`fixed` against M7's E3:** identical through t2. From t3 on, single windows differ by up to 0.00085 (seed 42) and 0.0010 (seed 43), and window averages by 0.00009 and 0.00021 (guard rows up to 0.0030). That is the same pattern M7's local models showed against M6, at the same versions and thread count, and the cause is still unknown. Every M9 comparison is between passes of the same run.
-- Two seeds, mean ± SD (the last three columns per seed where they differ), CSV rows only:
-
-  | method | window avg | final (t5) | SD, t1 to t5 | macro-F1 over rounds, mean of t1 to t5 | local updates | uplink, float32 (MB) |
-  |---|---:|---:|---:|---:|---:|---:|
-  | E3 (`fixed`) | 0.9256 ± 0.0003 | 0.8951 ± 0.0011 | 0.0137 | 0.686 | 90 | 338.6 |
-  | E4: trigger + top-30 | 0.8360 ± 0.0064 | 0.8156 ± 0.0355 | 0.1240 | 0.815 | 95, 97 | 189.9, 194.1 |
-  | Trigger added to the fixed schedule, top-30 | 0.9240 ± 0.0006 | 0.8909 ± 0.0023 | 0.0155 | 0.853 | 128 | 338.6 |
-  | Trigger, all features | 0.8495 ± 0.0266 | 0.7637 ± 0.0197 | 0.0954 | 0.821 | 95 | 189.7 |
-  | Trigger on disagreement, all features | 0.7638 ± 0.0002 | 0.7529 ± 0.0009 | 0.1687 | 0.728 | 75, 77 | 190.3, 194.7 |
-  | Local + rehearsal | 0.9208 ± 0.0001 | 0.8964 ± 0.0001 | 0.0152 | — | 90 | — |
-
-- **H2 is not supported for E4 as the matrix defines it.** Service during a window is better (0.815 against 0.686 over rounds), but variance across windows is about nine times E3's and the window average is 0.090 lower. Time to E3's earlier score, the same in both seeds: E3 reaches it at the end of the window at t2, t3 and t5. E4 reaches it only at t3, and only because it fell at t2. With the trigger added to the schedule, it is reached after 0.2 of the window at t3 and at the window end at t2 and t5. Nothing reaches it at t1 or t4. The added trigger is earlier at one boundary of five, its variance isn't lower (0.0155 against 0.0137), and it costs 38 more local updates for a window average 0.0013 to 0.0016 lower.
-- **Where `e4` loses (checked per class, both seeds):** at window ends its F1 on the new class is 0.00 and 0.02 for recon at t2 (fixed schedule about 0.98), and 0.00 for ARP spoofing at t4 (about 0.81). Clients updated by window: 15 15 3 14 2 6 (seed 42) and 15 15 4 14 2 6 (seed 43). In the training partition, the new class is under 10% of every client's rows at t2 (8.1% at most), t4 (3.3%) and t5 (4.0%), and at least 10% for all 15 clients at t1 and 5 at t3. That fits a trigger on the error rate that moves too little when the new class is small, but I haven't tested that directly. Within E4, the clients' own models score above g_t (0.8940 against 0.8360), and the guard lifts it to 0.9031 ± 0.0088, still below E3's 0.9256.
-- **Label-free trigger:** 0 of 15 clients fire at t1 in both seeds, as D8 predicts.
-- **Top-K:** K = 30 is picked in both seeds, again the top of the grid (validation 0.8996, 0.9070, 0.9115 and 0.8978, 0.9072, 0.9097). Top-30 scores the same as all 43 features (0.9257 against 0.9256), and top-10 is 0.0097 lower. Inference still needs all features.
-- **The drift score adds nothing at the same cost.** The rule picks λ = 8 for E3's schedule and for E4 in both seeds, and 4 for the label-free trigger. On next-window rows, averaged over the five boundaries, the adaptive gate on E4 escalates 8.3% and 8.2% and catches 0.266 and 0.269 of errors, and a fixed gate loosened to the same rate catches 0.263 and 0.267. On E3's schedule: 0.292 and 0.300 against 0.288 and 0.304. It catches more than the plain fixed gate (0.205 and 0.215 at 6.0% and 6.3%) only by escalating more. Mean escalation stays under the 10% target.
-- **t1 blind spot (D8) stays:** at every strength, 0.2% of rows are escalated and 0.2% of errors caught. The PSI flag catches 91.2% at t1 by escalating 87.1%. Averaged over all five boundaries, it escalates 32% to catch 46% to 50%.
-- **Decided (D11, 2026-11-08, by the user after these results):** `e4_added` goes forward as E4. `e4` stays reported above as the matrix's reading, and it fails H2.
-
-### M10: SHAP explainability
-**Goal:** two-tier explanations that are cheap enough to run.
-- [x] Local TreeSHAP for the fused ensemble (top-k features per sample) (`src/ids/eval/explain.py`, `scripts/m10_shap.py`)
-- [x] Global SHAP per window/client from sampled, cached values; a SHAP drift signal (change in mean |SHAP| ranking)
-- [x] Explanation store (Parquet/JSONL) and figures
-- [x] Full-pool run: `notebooks/m10_kaggle.ipynb`, seeds 42 and 43
-- **Acceptance:** SHAP cost per sample is measured, and the global rankings per window are stored.
-
-**Design, fixed on 2026-11-08 before any M10 result (the user asked to start M10; the choices below are mine unless marked as the proposal's).**
-
-*What the proposal fixes:* two tiers. A "local SHAP summary" is made on the edge with each decision, and escalated samples carry "top-k features + SHAP summary + probabilities" to the cloud. A "global SHAP and explanation store" in the cloud holds a "consolidated attribution summary", and "SHAP drift patterns" are part of the cloud's drift monitoring (Step 5) and feed the feature-guidance agent (M12). Its cost mitigation: "sample-based SHAP, per-window SHAP caching, and top-feature only explanation storage". E4 to E7 all list SHAP as their XAI output.
-
-*Model explained:* the E4 carried forward (D11, `e4_added`), each client's edge ensemble after window t's update, on window t's test rows. M9 doesn't keep its models, so `scripts/m10_shap.py` reruns the `e4_added` pass with M9's code and K, saves the models per window, and checks that its scores match M9's report. g_t, the cloud's calibration on top, isn't explained: the proposal places local SHAP on the edge, after fusion.
-
-*What is attributed:* exact TreeSHAP, computed by XGBoost and LightGBM themselves (`pred_contribs`, `pred_contrib`), not the `shap` package. The edge averages the two models' *probabilities*, and SHAP is additive only in each model's margin (logit). So the attribution is w·φ_XGB + (1 − w)·φ_LGBM for the class the edge predicts, with the edge's fusion weight w. It sums exactly to the weighted margin of that class (checked in code on every call). The report states how often the class with the highest weighted margin is the class the edge predicts, so the size of this approximation is known.
-
-*Rows:* a uniform random sample of up to 1,000 CSV test rows per client and window (D7). It is drawn without labels, as the cloud would draw it, and labels are used only to report on it.
-
-*Local store:* for every sampled row, the top 5 features by |attribution| with their signed values, the bias, the predicted and true class, in `local.parquet`. The payload of an escalated sample (top 5 + the six probabilities + disagreement) is measured in bytes with M3's `payload_bytes`.
-
-*Global store:* per client and window, the mean |attribution| of each feature over the sample, and the cloud's summary as the mean over clients, each with its ranking.
-
-*SHAP drift signal:* label-free, at each boundary t−1 → t, before any update. For each client, the model through t−1 is explained on a sample of window t's rows and on a sample of window t−1's rows. The signal is 1 − Spearman ρ between the two mean-|attribution| vectors, with the top-5 overlap also shown. The noise floor is the same comparison between two disjoint samples of window t−1. It is reported per boundary, including t1, where M5 found ADWIN on disagreement silent (D8).
-
-*Cost:* TreeSHAP time per row on 1 thread and on 4, per window, against plain inference on the same rows and threads.
-
-
-**Results, dev pool (2026-11-08, seed 42 only)**: [`reports/m10/dev/SHAP.md`](reports/m10/dev/SHAP.md)
-
-- One seed on a 5% sample. The refit `e4_added` matches M9's report exactly (difference 0.000000 in every window), so the explained models are M9's. I recomputed the report's figures from the stores (margin agreement, payload size, cloud summary as the mean of the clients, top-10 rankings), and they match. 49,989 rows were explained: dev clients have fewer rows, from 39 to 1,000 per client and window.
-- **The approximation is small:** the class with the highest weighted margin is the edge's predicted class for 0.9992 of the rows. The attributions add up exactly to that margin, checked on every call.
-- **Local TreeSHAP on every prediction is expensive at the edge.** At t5 it takes about 22 ms per row on one thread against 0.16 ms for inference, about 140 times as long, and the cost grows with the trees (1 ms at t0). On 4 threads it is 8 ms. These are single timings on this laptop. The proposal's own mitigation ("sample-based SHAP") fits: explaining only the escalated rows (about 7% to 10%, M9) or a sample would be needed in practice. That is not decided here.
-- **Escalation payload:** 178 bytes on average for the top 5 features with values, six probabilities and disagreement, as compact JSON.
-- **SHAP drift signal: small, but above its noise floor at every boundary, including t1.** The ranking change (1 − Spearman ρ, mean over clients) is 0.008, 0.005, 0.038, 0.009 and 0.024 at t1 to t5, against 0.003 for the control at each. The share of clients above their own control is 0.80, 0.80, 1.00, 0.73 and 1.00. At t1, where ADWIN on disagreement is silent (D8), 12 of 15 clients are above it. On dev the comparison is, if anything, conservative: the control compares two samples of the older window, which are smaller than the new window's sample. No threshold is set, so whether it works as a flag isn't tested. Its use is for M12's feature guidance, and the proposal's Step 5.
-- **Global ranking shifts with the attacks:** `Number`, `Variance` and `AVG` lead at t0 (DoS only), and `rst_count` and `Header_Length` lead from t3 on, once MQTT and later classes are in.
-
-**Results, full pool (2026-11-08, Kaggle, seeds 42 and 43)**: [`reports/m10/full/SHAP.md`](reports/m10/full/SHAP.md), [`seed43/SHAP.md`](reports/m10/full/seed43/SHAP.md)
-
-- **Runs:** 4 runs at `906f4ae` (a fit and an explain run per seed), 4 threads. All have `git_dirty` false and no changed files, and the library versions and Python match M9's full runs. I recomputed each seed's figures from its stores (row count, margin agreement, payload, drift means and share above control, cost ratios, top-10 rankings), and they match the reports. 89,743 rows were explained per seed, 772 to 1,000 per client and window.
-- **The refit doesn't match M9 exactly from t2 on.** It is identical at t0 and t1 in both seeds. At t2 to t5 single windows differ by −0.00044, +0.00021, −0.00154 and +0.00017 (seed 42) and +0.00056, −0.00032, −0.00063 and −0.00039 (seed 43). That is the same unexplained rerun drift seen in M7 against M6 and M9 against M7, at the same versions and thread count, starting one window earlier here. So from t2 the explained models are reruns of M9's `e4_added` that score within 0.0016 of it, not M9's exact models.
-- **The approximation is small:** the class with the highest weighted margin is the edge's predicted class for 0.9997 and 0.9998 of the rows.
-- **Local TreeSHAP costs about 100 times inference.** On one thread, 4.1 and 5.0 ms per row at t0, and 36.5 and 40.2 ms at t5, against 0.35 and 0.37 ms for inference at t5: 103 and 107 times as long (96 to 118 times across windows and seeds). On 4 threads, 14.7 and 17.3 ms at t5. The dev run's 140 times was on the laptop with smaller models, so it is not comparable. Explaining every prediction at the edge isn't practical. Explaining only the escalated rows or a sample is needed, as the proposal's mitigation says; that choice is left to M11.
-- **Escalation payload:** 175 and 176 bytes on average.
-- **SHAP drift signal: above its noise floor at three of five boundaries in both seeds, at the floor at t4.** Ranking change (1 − Spearman ρ, mean over clients), new window against control:
-
-  | boundary | seed 42 | seed 43 | clients above their control (42 / 43, of 15) |
-  |---|---|---|---|
-  | t0 → t1 | 0.015 vs 0.004 | 0.011 vs 0.003 | 14 / 13 |
-  | t1 → t2 | 0.004 vs 0.001 | 0.002 vs 0.001 | 8 / 10 |
-  | t2 → t3 | 0.010 vs 0.001 | 0.011 vs 0.002 | 13 / 14 |
-  | t3 → t4 | 0.002 vs 0.002 | 0.002 vs 0.002 | 8 / 6 |
-  | t4 → t5 | 0.012 vs 0.002 | 0.013 vs 0.002 | 9 / 12 |
-
-  At t1, where ADWIN on disagreement is silent (D8), 14 and 13 of 15 clients are above their control in the two seeds. At t5 the mean is carried by a few clients: the median is 0.0026 and 0.0027, near the floor. The values are small in absolute terms, no threshold is set, and whether it works as a flag isn't tested. It feeds M12.
-- **Global ranking:** `Number` ranks first at every window in both seeds. At t0 the top 5 are the same in both (`Number`, `AVG`, `Tot_size`, `Variance`, `Srate`). From t1 on, `Header_Length` and `Rate` join the top 4, and `rst_count` from t2 or t3 on, once MQTT and later classes are in.
-
-### M11: Cloud LLM verifier (inference-time only)
-**Goal:** E5/E6, gated verification with strict JSON output.
-- [x] **Backend: (a) Kaggle GPU is primary** (decided 2026-11-04); (b) is the local development fallback. The options are:
-  (a) Kaggle GPU with Gemma-2-2B-it or Mistral-7B-Instruct and 4/8-bit bitsandbytes (as in the proposal),
-  (b) local CPU via llama.cpp or Ollama with a quantized small model (slow but free),
-  (c) a hosted API (fast, but it costs money and data leaves the machine)
-- [x] Evidence payload: probabilities, disagreement, top-k SHAP, class centroids/priors, drift state (`scripts/m11_verify.py`)
-- [x] JSON schema: `final_label`, `override_edge`, `confidence_bucket`, `reasons[]`, `feature_recommendations[]`, `safety_notes`; validate → retry → fall back to "no override + SHAP-only" (`src/ids/llm/verifier.py`)
-- [x] Override policy D3; every prompt, output, parse failure and retry logged to JSONL
-- [x] E5 (gated) and E6 (always-on vs gated): full pool on Kaggle (`notebooks/m11_kaggle.ipynb`, seeds 42 and 43), Gemma 2 2B
-- [x] Mistral 7B Instruct on a subset (the proposal's second model): `scripts/m11_subset.py`, `notebooks/m11_mistral_kaggle.ipynb`
-- **Acceptance:** at least 99% of outputs pass schema validation after retries; FP rate change in drift windows (H3); LLM calls per 1k samples and latency reported.
-
-**Design, fixed on 2026-11-08 before any M11 result (the user asked to start M11; the choices below are mine unless marked as the proposal's).**
-
-*What the proposal fixes:* the LLM is "not trained and not used for continuous learning". It verifies escalated samples, checking the edge's class against "top SHAP features and their signed contributions", "neighbor summaries (e.g., nearest centroid statistics per class)", and "drift state flags and class priors in the current window". It must answer in JSON (`final_label`, `override_edge`, `confidence_bucket`, `reasons`, `feature_recommendations`, `safety_notes`). On a parse failure it retries "with a stricter prompt", otherwise it falls back to "no override + SHAP-only explanation". Overrides "must be conservative (only in high-disagreement + drift-flag situations) and always logged" (D3). Every prompt and output, parse failure and retry count goes to append-only JSONL. Models: Gemma 2 2B instruct by default on GPU with 8-bit or 4-bit bitsandbytes, and Mistral 7B Instruct v0.2 "for a smaller subset". E5 is gated and E6 compares always-on with gated. Metrics: LLM latency (mean and P95), LLM calls per 1k samples, and payload per escalation. H3: fewer false positives in high-drift windows.
-
-*Edge and gate:* E4 as carried forward (D11, `e4_added`), with its cloud calibration g_t and thresholds. M9 keeps neither, so `scripts/m11_verify.py` reruns the `e4_added` pass with M9's code and K (as M10 does), checks its scores against M9's report, and captures the gate's inputs as the pass runs. A hook in M9's gate code reads them, so no result changes. The gate is E4's: the cloud's τc and τd, the ADWIN drift flag, and the adaptive threshold at the strength M9 picked for `e4_added` (8 on the full pool, 0 on dev). It runs on every CSV test row of the stream, as in M9, in two settings: the model on its own window's rows, and the model through t−1 on window t's rows (the boundary, where the drift is).
-
-*Rows sent to the LLM:* a 2B model can't verify every escalated row of the full test set within Kaggle's GPU time. So the evaluation uses a uniform random sample of up to 500 CSV test rows per client and evaluation window, drawn without labels after the gate has run on the full stream. E5 sends every escalated row of the sample to the LLM. E6 sends the first 50 sampled rows per client and window, escalated or not, and is compared with E5 on those same rows. The gate's escalation rate and calls per 1k are also measured on the full stream.
-
-*Evidence payload (cloud side):* the edge's class and its six g_t probabilities, each booster's class, XGBoost–LightGBM disagreement, the top 5 features by exact TreeSHAP (M10's attribution, for the class the edge predicts) with their signed values and the row's feature values, and these:
-- **Class centroids:** for those 5 features, the median of each known class on D_pub, by pseudo-label. The pseudo-label is the mean of the clients' calibrated outputs, as in the proposal's distillation step 3, so the labels of D_pub stay unused.
-- **Class priors:** the share of each class the edge predicted on the client's earlier rows in that window's stream, using only rows before this one.
-- **Drift state:** the ADWIN drift flag, and the drift score.
-
-SHAP is computed only for rows sent to the LLM.
-
-*Output contract:* JSON only. `final_label` must be one of the six classes, and `override_edge` must equal "final_label differs from the edge's class". `confidence_bucket` is low, medium or high. `reasons` holds 1 to 3 strings and `feature_recommendations` 0 to 5 names of model features. `safety_notes` is a string. A reply that fails any check is retried up to 2 times, with the error stated and a stricter instruction. After that the fallback applies. Decoding is greedy (no sampling), so a rerun gives the same output on the same hardware.
-
-*Override policy (D3):* the LLM's class replaces the edge's only if `override_edge` is true, the two boosters predict different classes ("high disagreement"), and a drift flag is on: ADWIN fired within the last 200 flows, or the drift score is above 0. Using the boosters' classes, not τd, is my reading of "high disagreement", because τd is 1.01 (the test switched off) in several full-pool windows. As an ablation, `llm_free` takes the LLM's class whenever its reply is valid, which shows what D3 holds back.
-
-*Metrics, on the sampled rows, paired with the edge on the same rows:* macro-F1 over the classes present; the false-positive rate (benign rows called an attack) and the miss rate (attack rows called benign); overrides that fix an edge error and overrides that break a correct label; valid replies on the first try and after retries; payload bytes; LLM latency per batch (mean and P95, which is what a request waits) and rows per second; and calls per 1k rows, on the full stream for E5 and 1,000 for E6. "High-drift windows" for H3 are the boundary rows, the model through t−1 on window t. H4 has no measure in the proposal and isn't tested here.
-
-*Backends:* `stub` is a rule-based stand-in (nearest centroid on the top features) for tests and the local dev run. It is not an LLM and its numbers are not results. `hf` is transformers on Kaggle's GPU: Gemma 2 2B instruct with 4-bit NF4 and float16 compute (the T4 has no bfloat16), batch 16, at most 256 new tokens. Mistral 7B is a later run on a subset, as the proposal says.
-
-**Pipeline check, dev pool (2026-11-08, seed 42, stub verifier): not a result.** [`reports/m11/dev/VERIFY.md`](reports/m11/dev/VERIFY.md)
-
-- At 4 threads the refit matches M9's `e4_added` exactly in every window, so the gate hook changes nothing. At the laptop's default 10 threads it differs by up to 0.0025, the thread-count effect M4 measured.
-- I checked the outputs with a separate script:
-  - The rows sent to the verifier are exactly the escalated and always-on rows, and SHAP was computed only for them.
-  - Every D3 override has a valid reply that differs from the edge, boosters that disagree, and a drift flag.
-  - E5 and E6 rebuild from the per-row records.
-  - Macro-F1 recomputes to within rounding.
-- 77,842 rows were sampled and 14,127 sent to the verifier. The full stream escalates 8.6%. The payload is about 1,000 bytes, against M10's 175: class medians and recent class shares are what make it larger. The prompt log is 72 MB for the dev pool, so it isn't tracked in git.
-- The stub's numbers are not reported as results. It replaces the edge's label wrongly far more often than rightly, which only shows that the pipeline lets a bad verifier through when the policy is off (`llm_free`).
-
-**Results, full pool, Gemma 2 2B instruct (4-bit), seeds 42 and 43 (2026-11-09).** [`reports/m11/full/VERIFY.md`](reports/m11/full/VERIFY.md), [`seed43/VERIFY.md`](reports/m11/full/seed43/VERIFY.md). Both runs are at commit 42e650e with a clean tree. The refit `e4_added` differs from M9's report by at most 0.00045 and 0.00052 macro-F1 per window (Kaggle sessions, as in M10). I checked the outputs with the separate script used on dev: every check passes, and macro-F1 recomputes to within 5e-7. Values are seed 42 / seed 43.
-
-- **The verifier makes E4 slightly worse, and D3 keeps the loss small.** Mean macro-F1 over windows on the sampled rows:
-
-  | setting | E4 edge | E5 gated, D3 | gated, LLM label whenever valid |
-  |---|---:|---:|---:|
-  | boundary (t−1 model on window t) | 0.6776 / 0.6785 | 0.6763 / 0.6776 | 0.6736 / 0.6709 |
-  | own window | 0.9316 / 0.9309 | 0.9309 / 0.9303 | 0.9287 / 0.9267 |
-
-  On the always-on rows (E6), D3 gives 0.6792 / 0.6753 at the boundary against the edge's 0.6819 / 0.6772. Without D3 the LLM's label drops it to 0.4906 / 0.4805. In no window does E5 beat the edge.
-- **Overrides break more than they fix.** At the boundary, E5 under D3 changes 365 / 294 labels: 105 / 86 fix an edge error and 245 / 191 break a correct one. Without D3 it changes 1,625 / 1,807 (561 / 493 fixed, 1,020 / 1,274 broken). On escalated rows the LLM's label is right on 0.400 / 0.386 of them, the edge's on 0.537 / 0.577.
-- **H3 is not supported with this model: the false-positive rate doesn't move.** It is identical for the edge, E5 and E6 in every window. The LLM never moves a row between benign and an attack class: on the 260 / 278 benign rows it saw, it kept all 17 / 18 of the edge's false positives.
-- **What Gemma does instead: every ddos becomes dos.** Of the rows the edge called ddos and sent to the verifier (7,058 / 7,264), Gemma relabels all but one as dos, although 0.79 / 0.82 of them are ddos. Otherwise it copies the edge's label, except for 3 spoofing rows per seed that it calls recon. Its reasons are often wrong about the evidence ("the probability for DOS is significantly higher" with ddos at 0.975). The grounding check (0.967 / 0.973) misses this, because it only checks that a reason names a feature or class, not that the claim is true. M14's H4 measure (a) needs the stronger check.
-- **Acceptance.** Valid replies: 0.554 / 0.560 on the first try, 0.9999 after retries (1 fallback per seed), so the 99% bar is met. Most first-try failures set `override_edge` to true while keeping the edge's label. Calls per 1k rows on the full stream (E5): 84.1 / 84.3 at the boundary, 75.3 / 77.6 on the own window; E6 is 1,000. Batch latency for 16 rows on a T4: mean 24.3 / 22.9 s, P95 27.6 / 26.1 s; 0.66 / 0.70 rows per second, so the LLM step took about 8.5 hours per seed for about 14,000 rows. Payload: about 1,020 bytes.
-- **Not concluded:** whether a larger model does better. The proposal's Mistral 7B run on a subset is still open. These are two seeds of one 2B model with one prompt, and the prompt was not tuned on any M11 output.
-
-**Mistral 7B subset, design fixed on 2026-11-09 before any Mistral result.** The proposal says "for a smaller subset" and gives no size, so these choices are mine. The rows are those seed 42's Gemma run sent to the verifier (14,067), in a random order drawn with a fixed seed and without labels; Mistral verifies them in that order until a 9-hour budget on one T4 runs out, and the prefix it reaches is the subset. Reusing that run's evidence means no refit, and both verifiers see exactly the same rows and payloads. Everything else is unchanged: prompt, JSON contract, retries, D3, 4-bit NF4 with float16 compute, batch 16, 256 new tokens, greedy decoding. Reported, paired on the subset rows: each verifier's accuracy against the edge's on escalated (E5) and always-on (E6) rows, overrides that fix or break a label under D3 and without it, false positives on benign rows, valid replies, and latency. Macro-F1 of the full sample can't be computed from a subset, so it isn't reported. A stub check on dev reproduces the dev run's overrides exactly, so the row pairing and the D3 recomputation are right.
-
-**Results, Mistral 7B Instruct v0.2 subset (2026-11-10).** [`reports/m11/full/mistral/VERIFY.md`](reports/m11/full/mistral/VERIFY.md). Commit 990f5ea, clean tree. The model came from Hugging Face, because Kaggle offers Mistral only in its PyTorch and Keras formats. The 9-hour budget reached 4,960 of the 14,067 rows (2,245 escalated, 2,951 always-on, 87 benign).
-
-- **Mistral rubber-stamps the edge.** On its valid replies it disagrees with the edge on 6 of 4,024 rows (0.15%). Under D3 it changes 2 escalated labels (1 fixed, 0 broken) and no always-on label. Its accuracy on escalated rows, 0.555, is the edge's 0.554. On the same rows Gemma is at 0.411, changing 221 labels under D3 (67 fixed, 147 broken).
-- **It fails the 99% acceptance bar:** 0.314 valid on the first try and 0.811 after retries, so 936 rows (19%) fall back to the edge's label. 347 of the 936 final failures write `\_` for underscores in feature names, which isn't valid JSON. Others drop or rename `feature_recommendations`, or set `override_edge` to true while keeping the edge's label. The parser was not relaxed after seeing these outputs.
-- **False positives:** the edge calls 4 of the 87 benign rows an attack, and so do both verifiers, with or without D3. Too few rows to say anything about H3 beyond what the Gemma runs show.
-- **Cost:** 48.1 s mean and 55.3 s P95 per batch of 16 on a T4, 0.32 rows per second: about half Gemma's speed.
-- **So, across both models, H3 isn't supported.** The small model changes labels and is wrong more often than right. The larger one hardly ever changes a label. Neither moves the false-positive rate. These are one prompt and two models, and the prompt was not tuned on any M11 output.
-
-### M12: LLM adaptation-policy agent (training-time decisions)
-**Goal:** the "explanation" document's extension: the LLM decides *how* to learn next, never the model internals.
-- [x] Policy JSON: `update_urgency`, `training_style`, `preserve_old_behavior`, `feature_focus_groups`, `buffer_selection`, `update_scope`, plus `reasons` (`src/ids/llm/policy.py`)
-- [x] Each field mapped to a training knob, applied deterministically (`scripts/m12_policy.py`)
-- [x] Inputs: drift registry, SHAP drift, per-class metrics; each decision is logged with its evidence (`decisions_<arm>.jsonl`), and every prompt and reply too
-- [x] Ablation: LLM policy vs a fixed heuristic policy vs no policy, full pool on Kaggle (seeds 42, 43 and 44)
-- **Note:** the main proposal says the LLM is "not used for continuous learning", while the explanation document gives it control over training decisions. The paper must state clearly that the LLM controls the training *policy* only.
-- **Acceptance:** the policy is applied deterministically, and the ablation results are recorded.
-
-**Design, fixed on 2026-11-10 before any M12 result (the user asked to start M12; the choices below are mine unless marked as the explanation document's).**
-
-*What the explanation document fixes* ("What Changes Through LLM Reasoning"): the LLM "observes and controls the training" and "doesn't change anything inside the model". It decides when the update runs ("update_urgency": "low" means the update is delayed and conservative training is scheduled), how aggressive it is ("training_style": conservative means a lower effective learning rate and fewer new trees), whether the rehearsal buffer gets more weight ("preserve_old_behavior": true means more buffer samples, less forgetting), which feature groups get priority ("feature_focus_groups", with feature values unchanged), which rows the buffer keeps (boundary-critical against stable), and whether the update is partial or full ("full only when necessary"). It writes a structured JSON policy for the next window, logged for governance.
-
-*Base:* E4 as carried forward (D11, `e4_added`), with M9's K and code. The arms differ only in the policy.
-
-*When a policy is decided:* once per client and window, at the client's first update point in that window. In E4 that is an ADWIN trigger if one fires, else the window's end. The policy holds for that window's updates. At t0, every client fits with the default policy. This is my reading of "next-window policy": the decision is made just before the client trains, from what it has seen so far, so it is causal.
-
-*Evidence the client reports (summaries, no rows):*
-- whether ADWIN fired, and when;
-- the model's error on the new rows against its error on its own validation rows;
-- classes in the new rows the model hasn't trained on;
-- class shares of the new rows and of the buffer;
-- per-class validation F1;
-- the share of features whose PSI against the client's earlier rows passes the alert level, and the 5 most shifted features;
-- SHAP drift: 1 − Spearman ρ between the model's mean |SHAP| on 200 new rows and on 200 buffer rows (M10's measure);
-- the top 5 SHAP features on the new rows;
-- the client's previous policy.
-
-Class shares and error rates come from the client's own labelled training rows, which are already used to train, and they reach the cloud as summaries only. The test rows are never read.
-
-*Knobs:*
-
-| field | values | what it sets |
-|---|---|---|
-| `update_urgency` | low, medium, high | low skips that update and keeps the rows: at a trigger, the window's end still updates; at the end, the rows wait for the next window, as M9's `e4` does. Medium and high both update as E4 does, so they act the same; high is kept because the document names urgency levels. |
-| `training_style` | conservative, standard, aggressive | learning rate and new-tree budget × 0.5, × 1 or × 1.5 (early stopping still applies) |
-| `preserve_old_behavior` | true, false | buffer rows weigh × 2 in training |
-| `feature_focus_groups` | 0 to 2 of tcp_flags, protocol, rate_timing, packet_size | those groups' features weigh × 1.5: XGBoost's column sampling and LightGBM's split gain. Features outside the top-K stay excluded |
-| `buffer_selection` | uniform, boundary | boundary keeps, per class, the new rows with the smallest margin between the top two classes; uniform is M6's random choice |
-| `update_scope` | partial, full | full refits both boosters from scratch on the new rows and the buffer; partial adds trees |
-
-The multipliers and the four feature groups are my assumptions: the document gives directions, not sizes. The default policy (medium, standard, false, none, uniform, partial) is exactly E4.
-
-*Arms:*
-- **none:** the default policy at every decision. It must match M9's `e4_added`, which checks that the policy code changes nothing by itself.
-- **heuristic:** a fixed rule-based policy on the same evidence, with thresholds fixed now:
-  - urgency high on a new class; medium if ADWIN fired, the error rose by more than 0.02, or at least 25% of features shifted; else low;
-  - style aggressive on a new class, standard if ADWIN fired, else conservative;
-  - preserve on a new class or a trigger;
-  - focus on the groups of the 3 most shifted features, when at least 25% shifted;
-  - buffer boundary on a trigger;
-  - scope full when SHAP drift is above 0.5 and no class is new.
-- **llm:** the policy the LLM returns: Gemma 2 2B instruct (the proposal's default model; it met M11's JSON contract), 4-bit, greedy decoding. The prompt names each field's effect. A reply that fails validation is retried up to 2 times with the error, then the default policy applies.
-
-*Metrics:* M9's: macro-F1 per window on the `csv_only` test rows, the window average with and without t0, the final window, next-window macro-F1 (the model through t on window t+1), and class forgetting. Plus decision statistics: the share of each field's values, valid replies, and seconds per decision. On dev, the llm arm runs the heuristic through the LLM path (prompt, parse, log), so it must reproduce the heuristic arm exactly. That is a pipeline check, not a result.
-
-**Pipeline check, dev pool (2026-11-10, seed 42, 4 threads).** [`reports/m12/dev/POLICY.md`](reports/m12/dev/POLICY.md)
-
-- The none arm matches M9's `e4_added` exactly in every window (largest difference 0.000000), so the policy code changes nothing at the default policy.
-- The llm arm, given the heuristic's replies through the prompt, parser and log, makes the same decision as the heuristic arm at all 75 decision points and reproduces its scores exactly.
-- New classes arrive as the timeline sets them: one category per window at t1 to t4, for all 15 clients, and none at t5. So the heuristic picks high urgency and aggressive training at 80% of its decisions. 49% of decisions come at an ADWIN trigger.
-- On dev the heuristic is below E4: window average 0.8996 against 0.9079, final 0.8561 against 0.8731. This is one seed on the dev sample, so it is not a result. The full pool decides.
-
-**Results, full pool, seed 42 (2026-11-10, Kaggle, commit a430407, clean; CPU at 4 threads, Gemma 2 2B instruct 4-bit on a T4).** [`reports/m12/full/POLICY.md`](reports/m12/full/POLICY.md)
-
-| arm | window avg | avg excl. t0 | final | next-window avg | class forgetting |
-|---|---:|---:|---:|---:|---:|
-| none (E4) | 0.9241 | 0.9090 | 0.8915 | 0.6635 | 0.0286 |
-| heuristic | 0.9241 | 0.9090 | 0.8910 | 0.6667 | 0.0264 |
-| llm (Gemma 2 2B) | 0.8218 | 0.7863 | 0.7498 | 0.5970 | 0.0206 |
-
-| arm | t0 | t1 | t2 | t3 | t4 | t5 | clients updated at t1–t5 |
-|---|---:|---:|---:|---:|---:|---:|---|
-| none | 0.9994 | 0.9018 | 0.9205 | 0.9298 | 0.9015 | 0.8915 | 15, 15, 15, 15, 15 |
-| heuristic | 0.9994 | 0.9043 | 0.9193 | 0.9275 | 0.9032 | 0.8910 | 15, 15, 15, 15, 5 |
-| llm | 0.9994 | 0.8854 | 0.6206 | 0.9248 | 0.7510 | 0.7498 | 15, 3, 15, 2, 5 |
-
-- **Check:** the none arm is within 0.0011 macro-F1 of M9's `e4_added` in every window. That is larger than the 0.0005 seen in earlier Kaggle reruns of E4, but it is the same order, and the code matched M9 exactly on dev.
-- **Gemma 2 2B gives one policy for every case.** All 75 decisions are urgency low and conservative training, with the buffer preserved, uniform buffer selection and a partial update. 70 of 75 focus on rate_timing and packet_size. Replies were valid after retries at all 75 (0.80 on the first try), at 10.5 s per decision.
-- **"Low" urgency is where the damage comes from.** 73 of 75 decisions see a new class, yet Gemma delays every update. The update still runs at the window's end when ADWIN fired, which is why t1 and t3 update all 15 clients. At t2 only 3 of 15 clients update and at t4 only 2, so most clients have not learned that window's new class; macro-F1 there falls to 0.62 and 0.75. The final window ends 0.14 below E4.
-- **Gemma's reasons do not match the evidence.** The most common reasons are "No significant feature shift or SHAP drift" (15) and "New rows have low error rate and good F1 score on validation" (11), while a new class is present in 73 decisions. One reason says new classes "are limited" when one is new.
-- **The heuristic ties E4.** The window averages agree to 4 decimals, and per window the differences are at most 0.0025, which is inside the rerun noise above. The heuristic picks high urgency and aggressive training at 80% of decisions and never a full refit. Its lower class forgetting (0.0264 against 0.0286) is one seed.
-- **Class forgetting is lowest for the llm arm (0.0206)** only because the llm arm learned less to begin with. It is not a gain.
-- **Reading at seed 42 (seed 43 below repeats it):** with this 2B model, giving the LLM control of training decisions costs 0.10 window-average macro-F1, and a fixed rule set on the same evidence does no better than no policy. This matches M11, where Gemma also collapsed to a near-constant answer. Whether a larger model does better is not tested here.
-
-**Results, full pool, seed 43 (2026-11-14, Kaggle, commit f4a0840, clean; CPU at 4 threads, Gemma 2 2B instruct 4-bit on a T4).** [`reports/m12/full/seed43/POLICY.md`](reports/m12/full/seed43/POLICY.md)
-
-| arm | window avg | avg excl. t0 | final | next-window avg | class forgetting |
-|---|---:|---:|---:|---:|---:|
-| none (E4) | 0.9236 | 0.9085 | 0.8895 | 0.6627 | 0.0328 |
-| heuristic | 0.9229 | 0.9076 | 0.8885 | 0.6615 | 0.0321 |
-| llm (Gemma 2 2B) | 0.8271 | 0.7927 | 0.7448 | 0.6051 | 0.0229 |
-
-| arm | t0 | t1 | t2 | t3 | t4 | t5 | clients updated at t1–t5 |
-|---|---:|---:|---:|---:|---:|---:|---|
-| none | 0.9992 | 0.9015 | 0.9197 | 0.9284 | 0.9033 | 0.8895 | 15, 15, 15, 15, 15 |
-| heuristic | 0.9992 | 0.9027 | 0.9170 | 0.9253 | 0.9045 | 0.8885 | 15, 15, 15, 15, 5 |
-| llm | 0.9992 | 0.8847 | 0.6576 | 0.9250 | 0.7512 | 0.7448 | 15, 4, 15, 1, 5 |
-
-- **Check:** the none arm is within 0.0002 macro-F1 of M9's `e4_added` in every window.
-- **Gemma behaves as at seed 42.** All 75 decisions are again urgency low, conservative, buffer preserved, uniform selection and partial scope; 65 of 75 focus on rate_timing and packet_size. Valid after retries at all 75 (0.80 first try), 10.1 s per decision. A new class is present at 74 of 75 decisions. At t2 4 of 15 clients update and at t4 1, and macro-F1 there is 0.66 and 0.75. The reasons again deny the evidence ("No significant feature shift" 13, "Error rate on new rows is low, no significant drift." 12).
-- **The heuristic is again level with E4:** window average 0.0007 below, per window within 0.0031, the same order as rerun noise. Its class forgetting is again a little lower (0.0321 against 0.0328).
-
-**Results, full pool, seed 44 (2026-11-17, Kaggle, commit eca6aa2, clean; CPU at 4 threads, Gemma 2 2B instruct 4-bit on a T4).** [`reports/m12/full/seed44/POLICY.md`](reports/m12/full/seed44/POLICY.md)
-
-| arm | window avg | avg excl. t0 | final | next-window avg | class forgetting |
-|---|---:|---:|---:|---:|---:|
-| none (E4) | 0.9245 | 0.9095 | 0.8939 | 0.6663 | 0.0296 |
-| heuristic | 0.9232 | 0.9080 | 0.8885 | 0.6626 | 0.0283 |
-| llm (Gemma 2 2B) | 0.8265 | 0.7920 | 0.7840 | 0.5971 | -0.0152 |
-
-| arm | t0 | t1 | t2 | t3 | t4 | t5 | clients updated at t1–t5 |
-|---|---:|---:|---:|---:|---:|---:|---|
-| none | 0.9993 | 0.9028 | 0.9183 | 0.9296 | 0.9031 | 0.8939 | 15, 15, 15, 15, 15 |
-| heuristic | 0.9993 | 0.9056 | 0.9150 | 0.9269 | 0.9040 | 0.8885 | 15, 15, 15, 15, 5 |
-| llm | 0.9993 | 0.8854 | 0.6210 | 0.9213 | 0.7483 | 0.7840 | 15, 3, 14, 1, 7 |
-
-- **Check:** the none arm is within 0.0008 macro-F1 of M9's `e4_added` in every window.
-- **Gemma behaves as at seeds 42 and 43.** All 75 decisions are urgency low, conservative, buffer preserved, uniform selection and partial scope; 65 of 75 focus on rate_timing and packet_size. Valid after retries at all 75 (0.80 first try), 10.5 s per decision. A new class is present at 74 of 75 decisions. At t2 3 of 15 clients update and at t4 1, and macro-F1 there is 0.62 and 0.75. The reasons again deny the evidence ("No significant feature shift or SHAP drift." 14, "New rows have low error rate and good F1 score on validation." 12).
-- **The heuristic is again level with E4:** window average 0.0013 below. The llm arm's class forgetting is negative at this seed (−0.0152); the cause isn't checked, and with its lower per-window scores it isn't a sign of better retention.
-
-**Three seeds (42, 43 and 44), mean ± std window-average macro-F1:** none 0.9241 ± 0.0005, heuristic 0.9234 ± 0.0006, llm 0.8252 ± 0.0029. Final window: 0.8916, 0.8893, 0.7595.
-
-- **Result:** with Gemma 2 2B, LLM control of training decisions costs about 0.10 window-average and 0.13 final-window macro-F1 against E4, in all three seeds, because it delays every update. A fixed heuristic on the same evidence neither helps nor hurts. Three seeds with the partition fixed give a small spread, and a larger policy model isn't tested.
-
-### M13: Federated GBDT baseline (stretch)
-**Goal:** E7, a "true" federated boosting reference.
-- [x] Horizontal federated GBDT by histogram aggregation, relaxed privacy (`src/ids/fl/fedgbdt.py`, `scripts/m13_fedgbdt.py`)
-- [x] Results on the dev and full pools (Kaggle, CPU only), seed 42
-- **Acceptance:** the gap to E1 and E3 is reported, or the baseline is documented as infeasible with reasons.
-
-**Design, fixed on 2026-11-10 before any M13 result (my choices unless marked as the proposal's).**
-
-*What the proposal fixes:* E7 is a "federated GBDT baseline (if feasible)" with incremental drift adaptation, no feature selection, no LLM and SHAP as XAI, answering "how close can 'true' federated boosting get?". It is a stretch baseline because "secure cryptographic federated boosting is heavy for Kaggle", and it names two literature families: "Practical Federated Gradient Boosting Decision Trees" (horizontal, relaxed privacy, near-centralized accuracy) [16] and FedXGBoost variants [17].
-
-*Protocol:* horizontal federated XGBoost by histogram aggregation, run as XGBoost's own collective (Rabit), with one worker process per client holding only that client's rows. The clients' quantile sketches are merged into shared bin cuts once per fit. At every tree node, each client's gradient and Hessian histograms are summed across clients, so every client grows the same trees, and the validation metric for early stopping is summed the same way. Nothing else leaves a client. These summaries travel unencrypted: that is the relaxed privacy. **Deviation:** this is not the LSH-based method of [16]. Histogram aggregation is the protocol that XGBoost's federated mode and the FedXGBoost line use without their encryption, and it loses nothing to federation beyond the bin cuts: the summed histograms are exactly the ones pooled training would compute on the same bins. That makes it the "true federated boosting" upper reference the E7 question asks for. The README's earlier plan said "on reduced data"; the full pool is used if it fits, because the cost is about one XGBoost fit spread across 15 processes.
-
-*Model and schedule:* one global XGBoost (no LightGBM: it has no horizontal federated mode in its Python package) with M6's settings: `models.xgb`, `max_delta_step` 10, the fixed 6-class output, at most `first_trees` (50) rounds at t0 and `new_trees` (50) more per window, early stopping 20. "Incremental" (the proposal's E7 row): each window adds trees trained on that window's rows of every client, without a rehearsal buffer or feature selection. Class weights are balanced on the global class counts (a summary each client sends), capped at 50 as in M3. Each client holds out 10% of its window's rows for validation, as in M6. There is no temperature calibration, because the headline macro-F1 doesn't depend on it.
-
-*Measured:* M6's metrics on the `csv_only` rows (the window average with and without t0, final, class forgetting, per window), against E1 (M3), M6's naive incremental (local, no rehearsal), E3 (M7) and E4 (M9, `e4_added`), all seed 42. Also: wall time per window, model size, and uplink bytes per client per window. The uplink is counted as an upper bound: one histogram (features × 256 bins × gradient and Hessian, 8 bytes each) per tree node, without XGBoost's subtraction trick, which halves it. The sketch exchange isn't counted. This is set against E3's soft-label uplink from M7.
-
-*Where it runs:* Kaggle, CPU only (`notebooks/m13_kaggle.ipynb`, dev pool then full pool). Fifteen XGBoost worker processes don't fit in the 7.7 GB local machine (it paged and stalled with 8 of 15 started). Locally I checked the protocol with 3 workers (`tests/test_m13.py`: every client ends with a byte-identical model, continued training adds the trees, and 95% or more of predictions agree with pooled training) and ran the whole script on dev with 3 of the 15 clients as a smoke test. Its scores aren't a result.
-
-**Results, full pool, seed 42 (2026-11-10, Kaggle CPU, 4 vCPU, commit c7422cd, clean; 19 min).** [`reports/m13/full/FEDGBDT.md`](reports/m13/full/FEDGBDT.md)
-
-| method | window avg | avg excl. t0 | final | class forgetting |
-|---|---:|---:|---:|---:|
-| **E7 federated GBDT** | 0.8814 | 0.8577 | 0.8525 | 0.0323 |
-| E1 centralized (M3) | 0.8897 | 0.8677 | 0.8668 | 0.0277 |
-| Naive incremental, local (M6) | 0.9211 | 0.9054 | 0.8979 | 0.0240 |
-| E3 DA-FedDistill (M7) | 0.9257 | 0.9109 | 0.8947 | 0.0245 |
-| E4 (M9, `e4_added`) | 0.9244 | 0.9094 | 0.8925 | 0.0288 |
-
-| window | t0 | t1 | t2 | t3 | t4 | t5 |
-|---|---:|---:|---:|---:|---:|---:|
-| E7 macro-F1 | 1.000 | 0.823 | 0.862 | 0.888 | 0.862 | 0.852 |
-| E7 uplink per client, upper bound (MB) | 998 | 7,722 | 7,239 | 11,438 | 13,349 | 13,878 |
-| E3 uplink per client, raw (MB) | 1.31 | 4.11 | 4.16 | 4.32 | 4.33 | 4.34 |
-
-- **The gap to E1 (the acceptance check): −0.0083 window average and −0.014 at t5.** Federated boosting comes close to centralized training even though it only adds 50 trees per window on that window's rows, while E1 refits on every window so far. The gap widens at t4 and t5 (−0.018 and −0.014), where E7 has no buffer and E1 sees all old rows.
-- **The gap to E3: −0.044 window average and −0.042 at t5.** E7 is one global model, like E1, and both sit at about 0.88 to 0.89. The per-client methods (M6 local, E3, E4) sit at about 0.92. As M6 notes, a global model against one model per client isn't like for like, and this design can't say how much is personalisation and how much is the protocol.
-- **Communication: about 760 to 3,200 times E3's uplink per window** (998 MB against 1.31 MB at t0, 13.9 GB against 4.34 MB at t5). This is an upper bound: XGBoost's subtraction trick halves it, which still leaves it 380 to 1,600 times higher. The histograms go up once per tree level for every round, so the cost grows with depth × rounds × classes × features × bins, while E3's grows only with the D_pub rows. That, and not accuracy, is the case against federated boosting here, and it is what the proposal's "heavy for Kaggle" anticipated, even before any encryption.
-- **Cost on Kaggle: 80 to 207 s per window** across 15 worker processes on 4 vCPU; the t5 model is 11.7 MB (300 rounds × 6 class trees).
-- **Dev pool (pipeline check):** window average 0.8811 against E1's 0.8844; the same picture. [`reports/m13/dev/FEDGBDT.md`](reports/m13/dev/FEDGBDT.md)
-- One seed. Rehearsal and feature selection aren't part of E7 in the proposal and weren't tried; adding a buffer could close part of the t4 and t5 gap to E1.
-
-### M14: Full experiment matrix, ablations & sensitivity
-**Goal:** every number the paper needs.
-- [x] E1–E7 across ≥3 seeds (mean ± std): [`reports/m14/full/REPORT.md`](reports/m14/full/REPORT.md)
-- [x] Ablations: no ADWIN, no feature selection, no rehearsal, no LLM verification, LLM always-on vs gated, D_pub benign-only. SHAP-only vs SHAP+LLM explanations: dropped with H4 (c) on 2026-11-15, then run for the record on 2026-11-17 (the user asked; whether the paper uses it is decided later), see *H4 (c) for the record* below
-- [x] Sensitivity: 10/15/20 clients, Dirichlet α, τc/τd (the accuracy–cost frontier at 5/10/20/30%, D10), alternate timelines
-- [x] Sensitivity to suspect features and rows: with IAT (D6), without `Number`/`Weight` (fact 8), without profiling rows (D7)
-- [x] Sensitivity to the split: train on the official train block and test on the official test block, instead of M2's random split, to see whether mixing the official split inflates scores
-- [x] Hypotheses H1–H4 evaluated, with statistical tests (H1–H3 in tier 1; H4 (a), (b) in tier 3, descriptive)
-- [x] H4 measure ((a) and (b); (c) dropped), proposed here because the proposal gives none: (a) groundedness, the share of LLM reasons citing a feature that really is in that sample's top-k SHAP with the right sign; (b) schema-valid rate; (c) a fixed rubric scoring SHAP-only and SHAP+LLM explanations on a blinded sample for whether they name a concrete operator action. Rubric and scorers need settling before M11 outputs are read
-- **Acceptance:** all tables and figures are regenerated by one script from logged runs.
-
-**Design, fixed on 2026-11-15 before any M14 run (the user asked for it; the choices below are mine unless marked as the proposal's).**
-
-*What the proposal fixes:* the matrix E1–E7, the baselines (centralized, static, FedAvg, FedProx, FedMD-style, federated GBDT) and six ablations: remove the drift detector ("no ADWIN triggers"), remove feature selection ("use all features"), remove the rehearsal buffer, remove LLM verification, LLM always-on against gated, and remove LLM explanations ("keep SHAP only"). D_pub benign-only is the ablation D2 kept. Sensitivity: 10 and 20 clients against the default 15, and "alternate timelines". Metrics: accuracy, macro-F1, per-class precision and recall, AUROC, per-window and per-cluster confusion matrices, window-averaged macro-F1, forgetting, time-to-recover, edge latency, verifier latency (mean and P95), LLM calls per 1k samples, FL bytes per round and number of rounds, payload per escalated sample. **It sets no seed count and no statistical test**: "≥3 seeds" and the tests below are this plan's.
-
-*Where each number comes from now (full pool):*
-
-| what | built in | seeds so far | M14 adds |
+| Notebook | Runs | Hardware, time | Check |
 |---|---|---|---|
-| E1 centralized, static | M3 | 42 | 43, 44 |
-| naïve incremental, local + rehearsal | M6 | 42 | 43, 44 (naïve and local only) |
-| E2 FedAvg, FedProx | M8 | 42, 43 | 44 |
-| E3, FedMD | M7 | 42, 43 | 44 |
-| E4 (`e4_added`, D11) and M9's other passes | M9 | 42, 43 | 44 |
-| E5 gated, E6 always-on (Gemma 2 2B) | M11 | 42, 43 | 44 (GPU) |
-| E7 federated GBDT | M13 | 42 | 43, 44 |
-| policy agent (not in E1–E7) | M12 | 42, 43, 44 | none in tier 1; 44 in tier 3 (done 2026-11-17) |
+| [`m15_notebook_a.ipynb`](notebooks/m15_notebook_a.ipynb) | partition, E1, static, naïve and local incremental, E3, E4 (with its K sweep), E7 | CPU, ~10 h | every headline cell within ±0.005 of the committed seed-42 results ([`CHECK_A.md`](reports/m15/full/CHECK_A.md): largest difference 0.0014) |
+| [`m15_notebook_b.ipynb`](notebooks/m15_notebook_b.ipynb) | E4 refits, TreeSHAP, gated Gemma 2 2B verifier on a smaller sample | GPU T4, ~5 h | both refits within ±0.005 in every window ([`CHECK_B.md`](reports/m15/full/CHECK_B.md): largest difference 0.0018) |
 
-*The seed and what it leaves fixed:* the seed changes model training only. The partition (M2) was built once, at seed 42, and every seed reuses it, so seed spread is training noise and not client-assignment noise. Partition noise is tested once, by a reseeded partition in tier 2. The paper must say so.
+Attach the Kaggle dataset above, plus **Gemma 2 › gemma-2-2b-it** for Notebook B, and run all cells. Each notebook verifies the data checksums, clones this repository and runs `scripts/m15_check.py` at the end.
 
-*Tier 1, the headline (needed for the paper):*
-1. **Seed 44** for every row of the table above, plus seeds 43 and 44 for E1, static, naïve and E7. Every run is at `resources.n_jobs=4` on Kaggle, as before.
-2. **Ablations, all on E4 (`e4_added`) as the base, because E5 and E6 build on it (D11):**
+### Stage by stage
 
-   | ablation (proposal) | pass | exists? |
-   |---|---|---|
-   | no ADWIN | `fixed_k30`: fixed schedule, same top-K, no trigger | yes, M9 |
-   | no feature selection | `e4_added_allfeat`: trigger added to the schedule, all 43 features | **new pass in M9** |
-   | no rehearsal | `e4_added_noreh`: as E4, buffer capacity 0 | **new pass in M9** (the buffer code must accept 0; to check) |
-   | no LLM verification | E4 edge against E5 | yes, M11 |
-   | LLM always-on vs gated | E6 against E5, with LLM calls per 1k | yes, M11 |
-   | SHAP only vs SHAP + LLM | H4, below | measure is new; logs exist |
-   | D_pub benign-only | E3 and E4 on a partition whose D_pub is the 5,000 benign rows only | **new partition variant** |
+Each script writes its report to `reports/<stage>/<pool>/` and its run record (resolved config, environment, metrics, logs) to `results/runs/<run_id>/`. From the edge-ensemble stage on, scripts take `--pool dev` or `--pool full`.
 
-   The three new runs are at seeds 42, 43 and 44, so every ablation is paired with E4 on the same seeds.
-3. **Statistics and tables:** `scripts/m14_report.py` (below).
-
-*Tier 2, sensitivity (one seed, 42; reported as sensitivity, not headline):* each variant reruns E1, local + rehearsal, E3 and E4, the minimum to see whether the E3 and E4 claims hold.
-- clients 10 and 20 (the proposal's); Dirichlet α 0.1 and 1.0 around the default 0.5;
-- alternate timeline `alt_order` (already built by M2);
-- partition reseeded (same settings, another seed);
-- with IAT (D6); without `Number` and `Weight` (fact 8); without the profiling rows (D7);
-- official split: train on the official train block, test on the official test block (recovered from the CSV's row order).
-
-That is 10 variants. Each needs its own partition (except the three feature variants), so `partition_dir` gets a variant key (`splits/<pool>/<timeline>/<variant>`), with reports under `reports/mX/full/<variant>/` through the existing `--tag`. The default variant keeps today's paths, so earlier results are untouched.
-
-*Tier 3, from logs that exist (no new training):*
-- **τc/τd frontier (D10).** M5 has a τ grid for the M3 edge model only (`reports/m5/full/gate_frontier.csv`); M9 stores only the tuned points. For E4, M11's `evidence.parquet` holds each sampled row's confidence, disagreement, score and label (82,500 rows per seed, checked for seed 42), so the escalation rate against errors caught can be swept over a τ grid at the 5, 10, 20 and 30% targets without new training. For the LLM's side: 8,250 of those rows are always-on, sent to the verifier whatever the gate said, so for any τc and τd the rows that gate would have escalated, and what Gemma did on them, can be read from the logs without new GPU time. This is limited to the always-on sample, which must be stated.
-- **H4 (a), groundedness, the stronger check M11 showed is needed:** a reason counts as grounded only if it names a feature in that row's top-5 SHAP (stored with signs in M11's `evidence.parquet`) *and*, where it states a direction (high, low, increased, decreased), the direction matches the sign of that feature's SHAP value for the predicted class. A reason that names no feature, or that the parser can't read, counts as not grounded. The share is reported for the verifier's reasons (M11). The policy's reasons (M12) are window-level and their evidence stores no SHAP signs, so for them only a weaker check is possible (does the reason contradict the evidence it was given, such as "no new class" when one is new); reported as such.
-- **H4 (b), schema-valid rate:** first try and after retries, from the M11 and M12 logs.
-- **M12 seed 44** (GPU, about 1 h of GPU plus 2 h of CPU), if the GPU quota allows. Not needed for E1–E7.
-
-*H4 (c), the rubric (open).* The README said its rubric and scorers had to be settled before M11 outputs were read. **That didn't happen: M11's reasons have been read (summarized above).** So (c) can't be called preregistered. Two honest options: (i) drop (c) and test H4 on (a) and (b) only; or (ii) fix the rubric now, disclose that it was fixed after M11, and score a new blinded sample: 100 rows, each with a SHAP-only template text and Gemma's text, shuffled, scored by the user (or a second person) on three yes/no items: names a concrete operator action; every claim matches the SHAP evidence shown; names the predicted class correctly. An LLM judge isn't proposed, because the model under test would be judged by a model of the same kind. My recommendation is (i), with (c) as a disclosed pilot only if the user wants to score.
-
-*Statistics (applies to H1–H4 and every ablation):*
-- **Per seed:** each metric as mean ± std over seeds 42, 43 and 44, as the README asks.
-- **Test:** paired difference between two methods in window-averaged macro-F1, with a 95% confidence interval from a client bootstrap: resample the 15 clients with replacement (10,000 draws), recompute each method's window-averaged macro-F1 on the pooled `csv_only` test rows of the drawn clients, average over seeds, and take the difference. Clients are the unit because their test rows are separate and their partitions differ, while windows and rows within a client aren't independent. With 3 seeds a test over seeds has almost no power, so seeds are averaged, not used as the unit.
-- **Decision rule:** a difference counts as a result when its 95% interval excludes 0 **and** its size passes 0.005, the reproducibility tolerance (M15; thread count alone moves cells by up to 0.004). Holm correction over the four primary comparisons: H1 E3 against naïve and against static; H2 E4 against E3 on time-to-recover and variance across windows; H3 E5 against E4 on the benign false-positive rate in high-drift windows.
-- **H2's variance:** the variance of macro-F1 over t1–t5, its interval from the same bootstrap. Time-to-recover uses M4's definition (`eval.recover_eps` 0.02).
-
-*One script for every table and figure:* `scripts/m14_report.py` reads only the stored per-window confusion counts and summaries under `reports/` (and the LLM JSONL logs for H4), never models, and writes `reports/m14/full/` with the headline table, the ablation table, the sensitivity table, the H1–H4 table with intervals, the frontier figure and the per-window figure. It refuses to run if a cell's source run has `git_dirty` true with changed files that matter (M8's `git_changed` rule), and lists each cell's source commit. That meets the acceptance line.
-
-*Compute, estimated from earlier full-pool logs (not measured for M14):* tier 1 is about 20 to 25 h of Kaggle CPU (M9 7.5 h, M6 about 2.6 h per seed, M7 about 2 h, M3 about 1 h, M13 0.3 h per seed, M8 not timed) plus about 8.5 h of GPU for M11 seed 44. Tier 2 is about 4 to 5 h of CPU per variant, about 40 to 50 h in all. Tier 3 is minutes, on the local machine. GPU is the binding limit (the weekly quota ran out in M12), so the single GPU run goes first.
-
-*Order:* (1) code: variant key, the two new M9 passes, `m14_report.py`, each checked on dev; (2) M11 seed 44 on GPU; (3) tier 1 CPU runs; (4) tier 3; (5) report with statistics; (6) tier 2.
-
-*Found while building (2026-11-15): the stored outputs can't feed the client bootstrap.* Every milestone's `confusions.csv` is pooled over clients (slices `all`, `csv_only` and the 3 clusters), so per-client counts don't exist for seeds 42 and 43. The evaluator now also stores per-client counts on CSV rows (current and next window, and every window for the t0 model, which static needs), so every new run has them. M11 is the exception: its scores come from the stored per-row sample (`verified.parquet`), so its per-client counts can be rebuilt for seeds 42 and 43 without the GPU. How to get them for the other milestones at seeds 42 and 43 is the user's call (below).
-
-*Built so far:*
-- per-client counts in the evaluator (`src/ids/eval/harness.py`);
-- `scripts/m9_e4.py --ablation`: passes `e4_added_allfeat` and `e4_added_noreh`, into `reports/m9/<pool>/<tag>/ablation/`, K from the sweep's checkpoints or else M9's `summary.json` (30 for dev and both full-pool seeds);
-- partition variants: `partition.variant` (own folder under `splits/`), `timeline.split: official` (the official test block starts at CSV row 7,160,831, where the label runs restart; 7,160,831 train rows, matching the cross-check above; profiling rows keep the random split), `dpub.benign_only`;
-- `--tag` for M3 and M4, and M6 and M7 read M4's summary at the same tag when it exists;
-- `src/ids/eval/stats.py`: macro-F1 from counts (checked against scikit-learn), the paired client bootstrap, Holm (`tests/test_m14.py`).
-- Dev check of the ablation passes (seed 42, 4 threads; a pipeline check, not a result): [`reports/m9/dev/ablation/E4.md`](reports/m9/dev/ablation/E4.md). Both run and store per-client counts. Window average: all features 0.9080, no rehearsal 0.9080, against `e4_added` 0.9079; no rehearsal raises class forgetting (0.0439 against 0.0336 for all features).
-- `notebooks/m14_kaggle.ipynb`: one seed per run, part A (M3, M4, M6, M7, M8) then part B (M9 with the ablations, M13), each step in its own process. Part B checks that part A of the same seed is committed.
-- `notebooks/m14_variant_kaggle.ipynb` (2026-11-16): one seed and one partition variant per run, CPU only, independent of the other notebooks. For `dpub_benign` it builds the variant partition (always at seed 42), then runs E3 (M7 without FedMD), M9's K sweep and `e4_added`, into `reports/mX/full/dpub_benign/seed<SEED>/`. K is chosen on the variant's own validation rows. `m2_build_partitions.py` now writes a variant's report to `reports/m2/<pool>/<variant>/`; before this fix a variant build would have overwritten the headline M2 report.
-- Dev check of the benign-only chain (seed 42, 4 threads; a pipeline check, not a result): [`reports/m7/dev/dpub_benign/seed42/DISTILL.md`](reports/m7/dev/dpub_benign/seed42/DISTILL.md), [`reports/m9/dev/dpub_benign/seed42/E4.md`](reports/m9/dev/dpub_benign/seed42/E4.md). Every step exits 0 and both reports store per-client counts. On dev, window average: E3 0.6056 (0.9130 with the proposal's D_pub), `e3_guard` 0.9127, local-only 0.9131, `fixed_k30` 0.6181, `e4_added` 0.8094 (0.9079), K = 30. **The variant changes more than D_pub:** the attack rows that leave D_pub go back to the clients (dev: D_pub 6,523 → 1,000 rows, assigned rows 631,431 → 636,954), so its train and test rows are not identical to the headline's, and its numbers are not paired row for row with the headline runs.
-
-*Seeds 42 and 43 are rerun (decided 2026-11-15, the user asked for the recommended option),* so that every seed has per-client counts. The reruns replace the published seed 42 and 43 numbers of M3, M4, M6, M7, M8, M9 and M13; each changed number is listed against the old one when the results come back. M11's seed 42 and 43 counts come from its stored rows; M10 and M12 aren't rerun.
-
-*Part A back (2026-11-15), seeds 42, 43 and 44, Kaggle CPU at `782bd03`. All 15 clients' counts are stored in M4, M6, M7 and M8, and no log has an error. Only reports written by earlier steps of the same run were dirty.* The seed 42 and 43 reruns against the published numbers (window-averaged macro-F1, `csv_only`):
-- M4 and M8 reproduce exactly at every listed precision.
-- M3 moves by at most 0.0004 in a macro-F1 cell of `results.csv` and 0.0023 in ECE. Its latency is now measured on Kaggle's CPU, not the local machine: single-flow P50 is unchanged (t5 6.01 → 6.04 ms), P95 rises (8.65 → 11.72 ms) and batched t5 rises from 74 to 130 µs/flow.
-- M6 and M7 move by at most 0.0008 in window average (`e3_unweighted` seed 42: 0.9208 → 0.9216) and at most 0.0031 at t5 (`e3_guard` seed 43: 0.8981 → 0.9012). This is within the 0.004 that a thread-count change alone causes (M4), and the conclusions don't change.
-- Seed 42: E3 0.9257 → 0.9258, local-only 0.9210 → 0.9209. Seed 43: E3 0.9251 → 0.9252.
-- Three-seed means (`reports/m7/full/SEEDS.md`, `reports/m8/full/SEEDS.md`): E3 0.9256 ± 0.0004, local-only 0.9207 ± 0.0004, naïve 0.9212 ± 0.0001, `e3_guard` 0.9285 ± 0.0005, FedMD 0.8873 ± 0.0002, FedAvg 0.8415 ± 0.0039. E3 leads local-only in window average in all three seeds (+0.0049, +0.0043, +0.0057) and trails it at t5 in all three (−0.0019, −0.0008, −0.0017). Static is 0.4024 / 0.3924 / 0.3923 and E1 0.8897 / 0.8897 / 0.8898.
-
-*Part B back (2026-11-15), seeds 42, 43 and 44, Kaggle CPU at `1e52d49`. Every M9 run is clean; each M13 run's dirty flag lists only the M9 reports written earlier in the same notebook run.* Seed 44's M13 report reads its reference rows from seed 42's earlier reports, so use the three-seed tables, not that report's reference table.
-- **Seed 42 and 43 reruns against the published numbers (csv_only window average).** M13 seed 42 reproduces exactly (E7 0.8814). M9 seed 43 moves by at most 0.0002 in any method. M9 seed 42 moves by at most 0.0007 in every method except the three plain-ADWIN ones (`e4` 0.8315 → 0.8418, `e4_guard` 0.8969 → 0.9033, `e4_local` 0.8874 → 0.8942), whose t5 moves by up to 0.063. `e4_added` is 0.9244 → 0.9243. The `e4` row is the one H2 is tested on, and its seed-42 number changed by 0.010, so the old figure should not be quoted. Not traced why only these passes moved at seed 42.
-- **E4 (`e4_added`), three seeds** (`reports/m9/full/SEEDS.md`): 0.9241 ± 0.0004 window average, 0.8920 ± 0.0020 at t5. It is 0.0015 to 0.0016 below E3 in every seed (E3 0.9256 ± 0.0004).
-- **Ablations on `e4_added`, three seeds, window average (t5; class forgetting).** No ADWIN trigger (`fixed_k30`): 0.9255 (0.8950; 0.0282). No feature selection: 0.9248 (0.8928; 0.0294). No rehearsal: 0.9241 (0.8930; 0.0319). `e4_added` itself: 0.9241 (0.8920; 0.0302). All four sit within 0.0014 of each other, which is under the 0.005 size floor, so none of these ablations passes the decision rule on window average. The fixed schedule without the trigger is slightly ahead of E4 in every seed. Rehearsal's only visible effect is a small rise in class forgetting. These are point differences; the bootstrap intervals come from `m14_report.py`, which isn't written yet.
-- **E7 (M13), three seeds:** 0.8814, 0.8813, 0.8814 window average (t5 0.8525, 0.8510, 0.8508).
-
-*M11 seed 44 back (2026-11-16), Kaggle T4 at `c15acd1`, clean, Gemma 2 2B* ([`reports/m11/full/seed44/VERIFY.md`](reports/m11/full/seed44/VERIFY.md)). The rerun `e4_added` differs from M9 by at most 0.0010 in any window. 14,688 rows went to the verifier, 0.9999 valid after retries (0.560 on the first try), 0.68 rows/s, 87.4 LLM calls per 1k flows at the boundary. Same result as seeds 42 and 43:
-- Sampled rows, mean over windows, E5 gated with D3 against the E4 edge: boundary 0.6639 against 0.6652, own window 0.9253 against 0.9261. The false-positive rate is identical in every row of the table (boundary 0.0324), so the verifier never changes a benign decision.
-- Three seeds (42, 43, 44): boundary E5 0.6726 ± 0.0076 against edge 0.6738 ± 0.0074; own window 0.9288 ± 0.0031 against 0.9295 ± 0.0030. E5 is below the edge in every seed and setting, by 0.0006 to 0.0013. H3 isn't supported at three seeds.
-- On valid escalated rows, Gemma again relabels every row the edge called ddos as dos (3,753 of 3,753; seeds 42 and 43: 3,262 of 3,262 and 3,526 of 3,526), and copies the edge's label otherwise, except 3 spoofing rows called recon.
-
-*D_pub benign-only back (2026-11-16), seeds 42, 43 and 44, Kaggle CPU at `6a745fc`; every run is clean.* The three runs built the same variant partition (identical `client_partitions.json`, `window_definition.json` and `PARTITION.md`). As designed, M9's report has only the K sweep and `e4_added`, so it lists `fixed`, `e4`, `e4_schedule` and `e4_label_free` as missing. Window average, `csv_only` ([`reports/m7/full/dpub_benign/`](reports/m7/full/dpub_benign/), [`reports/m9/full/dpub_benign/`](reports/m9/full/dpub_benign/)):
-
-| method | seed 42 | seed 43 | seed 44 | mean ± std | headline D_pub (M14 part A/B) |
-|---|---:|---:|---:|---:|---:|
-| E3 | 0.6933 | 0.5717 | 0.4364 | 0.5671 ± 0.1285 | 0.9256 ± 0.0004 |
-| E4 (`e4_added`) | 0.4632 | 0.5066 | 0.4684 | 0.4794 ± 0.0237 | 0.9241 ± 0.0004 |
-| `e3_guard` | 0.9211 | 0.9219 | 0.9210 | 0.9213 ± 0.0005 | 0.9285 ± 0.0005 |
-| `e4_added`, client guard | 0.9203 | 0.9208 | 0.9208 | 0.9206 ± 0.0003 | — |
-| local + rehearsal | 0.9211 | 0.9209 | 0.9210 | 0.9210 ± 0.0001 | 0.9207 ± 0.0004 |
-
-- **Distillation on benign-only D_pub breaks E3 and E4.** With no attack rows in D_pub, the global model g_t sees only benign transfer rows. E3 loses 0.36 and E4 0.44 against their headline values, and both fall far below local-only. E3 varies widely with the seed: own-window macro-F1 at t0 is 1.000, 0.085 and 0.088 at seeds 42, 43 and 44, and at t1 0.646, 0.821 and 0.016 (headline E3: 0.999 and 0.905 at seed 42). So the attack rows in D_pub are what make the proposal's distillation work on this timeline. That is the D2 question this ablation was kept for.
-- **The client guard turns that into "no federation".** `e3_guard` and the guarded `e4_added` land on local-only to within 0.001 (seeds 42 and 44 match local-only to four decimals), so the guard rejects g_t almost everywhere. They stay safe but gain nothing.
-- These are point values. Train and test rows aren't the same as the headline's (attack rows that leave D_pub go back to the clients, see the dev check above), so the comparison with the headline column isn't paired row for row. The bootstrap intervals come from `m14_report.py`.
-
-*Tier 1 done (2026-11-16):* [`reports/m14/full/REPORT.md`](reports/m14/full/REPORT.md), from `python scripts/m14_report.py` (10,000 client draws, about 10 s locally). It reads only `confusions.csv` and `summary.json` under `reports/`, plus `reports/m11/full/<seed>/client_counts.csv`, which it builds once from M11's gitignored `verified.parquet` (500 sampled rows per client and window, 50 of them always-on). Checks built in: every one of the 17 CPU sources reproduces its own stored `csv_only` window average to 1e-9 from the per-client counts, and every M11 cell reproduces `VERIFY.md` (macro-F1 and false-positive rate) to its 4 decimals. The time-to-recover statistic reproduces M4's `time_to_recover` on seed 42. `sources.csv` lists each folder's run and commit. No source is dirty outside `reports/`. M11's seed 42 and 43 runs aren't on this machine, so their commits show as "not recorded locally".
-
-| test | difference | 95% interval | Holm p | passes the rule |
-|---|---:|---:|---:|---|
-| H1a E3 − naïve incremental, window avg | +0.0044 | −0.0024 to +0.0096 | 0.65 | no |
-| H1b E3 − static, window avg | +0.5299 | +0.5044 to +0.5578 | <0.0001 | **yes** |
-| H2a E4 − E3, variance over t1–t5 (lower better) | +0.00004 | +0.00000 to +0.00012 | 0.12 | no (E4 slightly *more* variable) |
-| H2b E4 − E3, mean time-to-recover (windows) | 0.00 | 0.00 to +0.40 | 1.0 | no (2.40 against 2.40) |
-| H3 E5 − E4 edge, benign FP rate, boundary | 0 | 0 to 0 | 1.0 | no (identical in every draw) |
-
-- **H1 holds against static and not against naïve incremental.** The client interval for E3 against naïve includes 0. Averaged over seeds E3 leads by 0.0044, but the gain isn't consistent across clients.
-- **H2 isn't supported.** At the window level, E4 recovers no faster than E3 and varies slightly more.
-- **H3 isn't supported.** Gemma 2 2B's verifier never changes a benign decision at any seed.
-- **Ablations on E4** (`ablation.csv`):
-  - No ablation passes the 0.005 floor except D_pub benign-only.
-  - Removing the ADWIN trigger *raises* window average by 0.0015, with an interval of +0.0002 to +0.0027.
-  - Removing feature selection raises it by 0.0007.
-  - Removing rehearsal changes it by 0.0000.
-  - D_pub benign-only costs E3 0.359 (−0.402 to −0.323) and E4 0.445 (−0.487 to −0.402).
-  - LLM verification costs 0.0011 at the boundary, and always-on costs 0.0011 more than gated. Both intervals exclude 0, but both differences are under the floor.
-- **Choices made while writing the script (mine, not the design's):**
-  - Holm runs over **five** p-values, not four, because H2 names two metrics. This is stricter than four.
-  - A hypothesis counts only when its Holm-adjusted p is also under 0.05.
-  - An ablation counts only when its raw p is under 0.05.
-  - The 0.005 floor applies to macro-F1 differences only. It isn't used for variance, time-to-recover or false-positive rate, which aren't in macro-F1 units.
-  - Time-to-recover is M4's per-window count, averaged over windows 1–5. A drop that never recovers counts as one window past t5, so the mean stays finite.
-  - H3 uses the boundary setting on M11's sampled rows, the README's high-drift setting.
-- `macro_f1_by_window.png` shows E3, E4, local + rehearsal, E1, E7 and static, as seed means.
-
-Tier 1 is complete.
-
-*Tier 3 done (2026-11-16):* [`reports/m14/full/TIER3.md`](reports/m14/full/TIER3.md), from `scripts/m14_tier3.py`, which `m14_report.py` calls. It uses no training and no LLM calls: only M11's stored rows and logs (`evidence.parquet`, `verified.parquet` and `llm_log.jsonl`, all gitignored and local) and M12's `decisions_llm.jsonl`.
-- **τc/τd frontier (D10).** E4's gate as M11 ran it (adaptive thresholds plus the drift hold), swept over base τc 0.40–0.98 and τd in `gate.tune_tau_d`, on M11's sampled rows. Each budget's point is chosen on own-window rows and read out on boundary rows.
-
-  | budget | own window: rate, errors caught | boundary: rate, errors caught |
-  |---:|---|---|
-  | 5% | 4.9%, 24% | 7.6%, 16% |
-  | 10% | 9.8%, 44% | 11.8%, 21% |
-  | 20% | 19.7%, 72% | 21.6%, 33% |
-  | 30% | 29.2%, 85% | 30.5%, 38% |
-
-  - After drift the gate escalates a little *more* than its budget and catches about half as many errors. Most boundary errors are confident ones, the gate's blind spot: 0.668 / 0.680 / 0.662 of them have confidence ≥ 0.9, against 0.15 on own-window rows.
-  - At every budget, E5 on the always-on rows is 0.0004 to 0.0019 below the edge, and the false-positive rate never changes. Raising the budget doesn't rescue H3 with this verifier.
-  - Limits: these are sampled-row rates (each client and window weighted equally), not full-stream rates. The LLM side is only the always-on sample.
-- **H4 (a), the strict groundedness rule fixed in the design.**
-  - Of the verifier's reasons (about 43,000 per seed), 0.420 / 0.422 / 0.413 name a feature in the row's top-5 SHAP, and 0.362 / 0.366 / 0.358 also get the direction right.
-  - Under 1% of replies have every reason grounded. Gemma nearly always adds reasons that cite only a probability or the recent class share, which the rule counts as not grounded.
-  - M11's weak check (every reason names a feature or class) gave 0.97, so it overstated grounding by more than half.
-  - The direction words are matched anywhere in a reason, so the rule is crude. A hand check of 12 reasons agreed with every label it gave.
-- **H4 (b), schema-valid rate.** Verifier: 0.554 / 0.560 / 0.560 on the first try, 0.9999 after retries. Policy agent (M12, seeds 42–44): 0.80 on the first try, 1.00 after retries.
-- **Policy reasons (weak check only).** Explicit contradictions of two yes/no facts (new classes, ADWIN fired): 0 of 212 and 1 of 210 reasons, a lower bound. But Gemma chose urgency low in every decision where a new class was present (73 / 73 and 74 / 74), so its decisions ignore the evidence its reasons cite.
-- **M12 seed 44, done 2026-11-17** (see M12): the same as seeds 42 and 43.
-
-*H4 (c) for the record (2026-11-17; the user asked for it, to decide later whether the paper uses it).* [`scripts/m14_h4c.py`](scripts/m14_h4c.py), output in [`reports/m14/full/h4c/`](reports/m14/full/h4c/H4C.md). **Not preregistered:** the rubric below was fixed after M11's reasons had been read, and M11's prompt never asked Gemma for operator actions, which tilts the action item against Gemma. Both are disclosed.
-- **Sample.** 100 rows of M11 seed 42 with a valid Gemma reply, 50 own-window and 50 boundary, fixed seed. Each row gives two texts: a SHAP-only template (the edge's label and probability, then the top-5 features with value and SHAP sign) and Gemma's text (label, confidence, reasons, features to watch, safety notes). The 200 texts are shuffled into `sheet.csv` with the evidence Gemma saw; `key.csv` holds the arm. Pairs and order are hidden; the arm isn't, because Gemma's prose is recognizable.
-- **Rubric, option (ii) of the design, two scorer items (y/n):** *action*, the text names a concrete operator action, what to do and to what ("further investigation is recommended" and "monitor X" don't count); *consistent*, every claim is supported by the evidence shown. The design's third item, "names the predicted class correctly", is computed instead of scored, as whether the text's label is the true class.
-- **Automatic results (checked):**
-  - Label correct: SHAP-only 0.70, SHAP + LLM 0.45 (40 rows only SHAP-only right, 15 only Gemma right; exact McNemar p = 0.001). This is M11's ddos → dos relabelling again.
-  - Action words (block, isolate, rate-limit, firewall, notify the operator and similar): 0 of 100 Gemma texts, and 0 of all 14,066 valid seed 42 replies. A raw search agrees: "investigat" appears in 7,559 replies, "mitigat" in 14 and always as "further investigation and mitigation", and no concrete action word at all.
-- **Pending: the human scoring.** Fill the `action` and `consistent` columns of `sheet.csv` with y or n (200 texts), without opening `key.csv`, then rerun the script; it never overwrites the sheet. Until then H4 (c) has only the automatic items, and they already point against H4: Gemma's narratives add no operator action and get the label wrong more often than the SHAP-only text.
-
-*Tier 2, built (2026-11-16):*
-- **The steps.** `scripts/m14_variant.py` holds every variant's overrides and its list of steps. Both `notebooks/m14_variant_kaggle.ipynb` and the local dev check run that list.
-  - Per variant at seed 42: the partition (M2), E1 (M3 + M4), E3 with local + rehearsal (M7, whose local pass is exactly M6's), M9's K sweep and `e4_added`.
-  - Reports go to `reports/mX/full/<variant>/seed42/`.
-  - Variants and their overrides:
-
-    | variant | overrides |
-    |---|---|
-    | `clients10`, `clients20` | `federation.n_clients` |
-    | `alpha0.1`, `alpha1.0` | `federation.dirichlet_alpha` |
-    | `alt_order` | `timeline.headline` |
-    | `reseed` | the partition drawn at seed 7 |
-    | `with_iat` | `features.exclude_wifi=[]` |
-    | `no_number_weight` | `features.exclude_wifi=[IAT,Number,Weight]` |
-    | `no_profiling` | `profiling.use=false` |
-    | `official_split` | `timeline.split=official` |
-
-  - The four variants that don't change the partition (`alt_order` and the two feature variants among them) rebuild the headline partition, which M2's dedup makes independent of the feature list, and restore the headline M2 figures.
-- **The report.** `m14_report.py` adds a sensitivity table for every variant that has come back: E1, local, E3 and E4, with client intervals for E3 − local and E4 − E3. The client count comes from the data, so the 10- and 20-client variants work.
-- **Dev checks (seed 42, 4 threads; pipeline checks, not results).**
-  - `with_iat`: every step exits 0, the rebuilt headline dev partition is byte-identical, and the headline M2 report is restored.
-  - Dev E1 goes from 0.8844 to 0.9891 with IAT, the D6 shortcut again. On dev, E3 is then 0.0022 *below* local-only (interval −0.0042 to −0.0009).
-  - **Checkpoint 2026-11-16.** Five of the ten dev chains pass with every step at exit 0: `with_iat`, `no_number_weight`, `alt_order`, `clients10`, `clients20`. The 10- and 20-client runs store 10 and 20 clients' counts.
-  - Dev window average (pipeline check, not a result):
-
-    | variant | E1 | local | E3 | E4 | E3 − local |
-    |---|---:|---:|---:|---:|---:|
-    | `clients10` | 0.8841 | 0.9171 | 0.9181 | 0.9141 | +0.0010 |
-    | `clients20` | 0.8841 | 0.9099 | 0.9077 | 0.9044 | −0.0022 |
-    | `alt_order` | 0.9164 | 0.9339 | 0.9286 | 0.9230 | −0.0054 |
-    | `with_iat` | 0.9891 | 0.9874 | 0.9852 | 0.9836 | −0.0022 |
-    | `no_number_weight` | 0.8833 | 0.9109 | 0.9114 | 0.9083 | +0.0006 |
-
-  - **All ten dev chains pass (2026-11-17).** The other five, dev window average (pipeline check, not a result):
-
-    | variant | E1 | local | E3 | E4 | E3 − local |
-    |---|---:|---:|---:|---:|---:|
-    | `alpha0.1` | 0.8841 | 0.9583 | 0.6782 | 0.7407 | −0.2801 |
-    | `alpha1.0` | 0.8841 | 0.8909 | 0.8901 | 0.8885 | −0.0008 |
-    | `reseed` | 0.8851 | 0.9075 | 0.8999 | 0.8970 | −0.0077 |
-    | `no_profiling` | 0.8801 | 0.9084 | 0.9064 | 0.9022 | −0.0020 |
-    | `official_split` | 0.8400 | 0.8865 | 0.8893 | 0.8864 | +0.0028 |
-
-    - Checked by hand: `reseed` gives a different partition (other hash; 631,392 dev rows against 631,431, as D_pub is redrawn too). In `official_split`, every CSV train row comes before row 7,160,831 and every test row starts at it.
-    - Watch on the full pool: with α 0.1, E3 collapses on dev (0.678 against local 0.958), much as with benign-only D_pub.
-  - **Bug found and fixed by `no_profiling`.** The evaluator made the `csv_only` slice only when some test rows weren't CSV rows. Without profiling rows every row is a CSV row, so every script's headline summary was empty and M4 failed. `csv_only` is now made whenever rows carry a source ([harness.py](src/ids/eval/harness.py), test in `tests/test_eval.py`). Earlier runs all had profiling rows, so none of their numbers change.
-  - **Notebook bug (fixed in `0922698`).** A literal `\n` in cell 1 had been saved as a real line break, so the first Kaggle attempt stopped with a syntax error before any step ran. Every notebook's code cells now compile.
-
-*Tier 2, full pool (2026-11-17):* all ten variants on Kaggle CPU at seed 42 and commit `0922698`, two accounts with five sessions each. Every step finished and wrote its report, and no log has an error. Each chain took about 6.5 h, not the 4–5 h estimated. Every variant's per-client counts reproduce its stored window average (to 1e-9), and `sources.csv` names each run. CSV rows, window-averaged macro-F1, one run per variant, so the intervals cover clients only (10,000 paired client draws, no Holm: these are sensitivity checks, not tests):
-
-| variant | clients | E1 | local + rehearsal | E3 | E4 | E3 − local (95% interval) | E4 − E3 (95% interval) |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| headline (seed 42) | 15 | 0.8897 | 0.9209 | 0.9258 | 0.9243 | | |
-| `clients10` | 10 | 0.8897 | 0.9232 | 0.9272 | 0.9264 | +0.0039 (−0.0054 to +0.0098) | −0.0007 (−0.0033 to +0.0022) |
-| `clients20` | 20 | 0.8897 | 0.9208 | 0.9243 | 0.9209 | +0.0036 (−0.0018 to +0.0077) | −0.0035 (−0.0065 to −0.0009) |
-| `alpha0.1` | 15 | 0.8897 | 0.9573 | **0.7091** | **0.7211** | **−0.2481 (−0.3162 to −0.1524)** | +0.0120 (−0.0115 to +0.0391) |
-| `alpha1.0` | 15 | 0.8897 | 0.9041 | 0.9017 | 0.9007 | −0.0024 (−0.0038 to −0.0004) | −0.0010 (−0.0028 to +0.0004) |
-| `alt_order` | 15 | 0.9179 | 0.9402 | 0.9347 | 0.9340 | −0.0055 (−0.0099 to −0.0027) | −0.0007 (−0.0046 to +0.0029) |
-| `reseed` | 15 | 0.8895 | 0.9175 | 0.9158 | 0.9152 | −0.0017 (−0.0054 to +0.0008) | −0.0005 (−0.0029 to +0.0016) |
-| `with_iat` | 15 | 0.9901 | 0.9914 | 0.9901 | 0.9894 | −0.0013 (−0.0028 to −0.0006) | −0.0007 (−0.0014 to −0.0002) |
-| `no_number_weight` | 15 | 0.8896 | 0.9192 | 0.9243 | 0.9215 | +0.0050 (−0.0021 to +0.0101) | −0.0028 (−0.0057 to −0.0004) |
-| `no_profiling` | 15 | 0.8894 | 0.9198 | 0.9253 | 0.9221 | +0.0055 (−0.0009 to +0.0101) | −0.0032 (−0.0052 to −0.0018) |
-| `official_split` | 15 | 0.8423 | 0.8889 | 0.8928 | 0.8938 | +0.0039 (−0.0019 to +0.0083) | +0.0011 (−0.0025 to +0.0051) |
-
-- **E3's gain over local-only never holds up.** In no variant does the E3 − local interval exclude 0 on the positive side. It is positive but includes 0 in five: clients10, clients20, no_number_weight, no_profiling and official_split. It is reliably negative in four: alpha1.0, with_iat and alt_order, the last at −0.0055 (just past the 0.005 floor), and alpha0.1. This agrees with tier 1, where E3's edge over naïve wasn't significant.
-- **Strong label skew breaks E3 (α 0.1).** E3 0.709 against local 0.957. It falls from t2 on: 0.492, 0.686, 0.681 and 0.583 at t2–t5, against 0.95 for local. Pooled over windows, it loses on 14 of 15 clients, by up to 0.40. Local-only rises above the headline here because each client's test rows are as skewed as its training rows. This is the same failure as benign-only D_pub, and the paper should report it as a limit of distilling over D_pub under extreme non-IID data. The dev check showed the same thing.
-- **E4 adds nothing over E3 anywhere.** Its interval excludes 0 only on the negative side, in clients20, with_iat, no_number_weight and no_profiling, each by less than the 0.005 floor.
-- **The other sensitivity questions.**
-  - *Partition noise (reseed).* E1 moves by 0.0002 and local-only by 0.0034, but E3 drops by 0.0100 and E4 by 0.0091, so E3 goes from above local-only to below it. Client assignment moves E3 more than the E3 − local gap, about 25 times the training-seed spread.
-  - *IAT (D6):* every method reaches about 0.99, and E1 goes from 0.890 to 0.990, so the shortcut found on dev holds on the full pool.
-  - *Number/Weight and profiling rows* change E1 by at most 0.0003.
-  - *The official split* lowers every method by 0.03–0.05 (E1 0.842 against 0.890), so M2's random split does inflate absolute scores. E3 and E4 keep the same order relative to local-only.
-  - *Client count* doesn't change the picture.
-- **Limits.** One seed per variant, so seed noise isn't in these intervals. Tier 1's three seeds put training-seed spread (std) at about 0.0004 for E3 and E4. The per-client figures above pool each client's counts over windows; I computed them for this note and they are not in `REPORT.md`.
-
-*Decided 2026-11-15 (the user asked for the recommended options):* (a) all three tiers as scoped, tier 2 last; (b) H4 (c) is dropped, so H4 is tested on (a) groundedness and (b) the schema-valid rate only, and the paper says the rubric wasn't fixed before M11's outputs were read; (c) M12 gets seed 44 only if GPU quota is left after M11 seed 44.
-
-### M15: Reproducibility package & paper artifacts
-**Goal:** a submission-ready artifact.
-- [x] Kaggle Notebook A (prep + FL simulation) and Notebook B (inference + LLM + XAI): both PASS on Kaggle, 2026-11-18
-- [x] Released configs: `experiment_config.json`, `client_partitions.json`, `window_definition.json`, `model_hparams.json`, LLM JSONL logs (`release/`)
-- [x] Figures/tables mapped to the IEEE IoT-J outline (`scripts/m15_paper.py`, `paper/ARTIFACTS.md`); privacy/threat-model section (D5) drafted in `paper/threat_model.md`
-- **Acceptance:** a fresh environment reproduces the headline table within ±0.005 macro-F1. A different thread count alone already moves individual cells by up to 0.004 (measured in M4), so the check must not demand exact equality.
-
-**Design, fixed on 2026-11-17 before any M15 run.** The two choices marked *decided* were the user's, from options I proposed; the rest are mine unless marked as the proposal's.
-
-*What the proposal fixes:*
-- **Notebook A** (training + FL simulation): data prep, partitioning, time windows, client simulation, training loops, logging.
-- **Notebook B** (inference + LLM verification + XAI): frozen trained models, routed inference experiments, explanation generation, exported artifacts.
-- **Deterministic logging:** `experiment_config.json`, `client_partitions.json`, `window_definition.json`, `model_hparams.json`, and every LLM prompt and output as append-only JSONL with schema results, parse failures and retry counts.
-- **The IoT-J outline:** introduction; background; system and threat model; method; setup; results; discussion; reproducibility and artifacts; conclusion.
-
-*Decided: where a fresh run starts.*
-- The processed Parquet from M1 (four files plus `data_manifest.json` with SHA-256s) is published as a public Kaggle dataset, citing CIC (Dadkhah et al. 2024).
-- CIC's terms checked on 2026-11-17: all CIC datasets may be redistributed in any form, with a citation to the dataset and its paper (recorded in the dataset card, `release/dataset/README.md`). Published 2026-11-17 as [indrajit147/ciciomt2024-processed-for-federated-ids](https://www.kaggle.com/datasets/indrajit147/ciciomt2024-processed-for-federated-ids) (version 1, public; all five files present, byte sizes identical to `data/processed/`, checked through Kaggle's API). Notebooks A and B check the SHA-256s.
-- `scripts/m1_prepare_data.py` documents how the Parquet is built from the merged CSV, whose SHA-256 is in the README. The merge of CIC's 72 CSVs into that file was done by hand and isn't scripted, which is a known gap.
-
-*Decided: the notebooks.*
-- **Notebook A** (`notebooks/m15_notebook_a.ipynb`, CPU, one session, seed 42, 4 threads):
-  - **Steps:** M2 partition, M3 + M4 (E1, static), M6 (naïve, local + rehearsal), M7 `e3`, M9's K sweep and `e4_added` (E4), M13 (E7).
-  - **Time:** about 9.8 h. This is a sum of measured tier-1 and tier-2 run times (M3 75 min, M4 11, M6 157–198, M7 `e3` 65, K sweep 150, `e4_added` 83, M13 17), so it fits one 12 h session with about 2 h to spare.
-  - **Not included:** E2 (FedAvg/FedProx) and FedMD, which are baselines below E1 and would push A past one session; their own notebooks still run them.
-- **Notebook B** (`notebooks/m15_notebook_b.ipynb`, GPU T4, seed 42):
-  - **Steps:** M2, M10 (refit `e4_added`, save the window models, TreeSHAP), then M11 (refit, then Gemma 2 2B verification on 100 rows per client and window, 10 of them always-on, against M11's 500 and 50).
-  - **Time:** about 5 h, estimated.
-  - **Deviation from the proposal, recorded:** B retrains E4 instead of loading A's frozen models, as M10 and M11 always have. Each refit is checked against M9's committed scores, and M11 can't load saved models without new code.
-
-*The check:* `scripts/m15_check.py`.
-- **A:** the notebook runs untagged in a fresh clone, so its reports overwrite the seed-42 ones in that clone. The check compares each headline cell with the committed file (`git show HEAD:…`): CSV rows, window average and each window, for E1, static, naïve, local + rehearsal (M6 and M7), E3, E4 and E7. It passes if every difference is within ±0.005, and writes `reports/m15/full/CHECK_A.md`.
-- **B:** passes if both refits' `fit_check.json` are within ±0.005 of M9 in every window. The verifier's results on the smaller sample are reported, not tested.
-- **Dev rehearsal (2026-11-17, local, seed 42, 4 threads):** Notebook A's step list on the dev pool. M2 to M9 ran clean and the check passed on 48 cells: E1 within 0.0008 of the committed file, every other method identical. M13 failed locally because the laptop ran out of memory (OpenBLAS allocation failures in the per-client workers, with about 0.8 GB free), so its 8 cells were compared with the unchanged committed file and test nothing. M13 ran clean on Kaggle in M13 and in all ten M14 variants. The dev outputs were not committed.
-- **Notebook A on Kaggle: PASS (2026-11-18).** Kaggle CPU, 4 threads, fresh clone at `31ecac5`, the public dataset attached and its SHA-256s checked. All 12 steps exited 0, in 10.2 h (14:09 to 00:18; the estimate was 9.8 h). M2 rebuilt the partition unchanged. All 56 cells are within ±0.005 of the committed seed-42 reports; largest difference 0.0014 (E4 at t4). Window averages, rerun against committed: E1 0.8897/0.8897, static 0.4024/0.4024, naïve 0.9212/0.9211, local + rehearsal 0.9208/0.9209, E3 0.9256/0.9258, E4 0.9239/0.9243, E7 0.8814/0.8814. Recomputed locally from the zip against `HEAD` with the same result; the committed reports for these methods are unchanged since `31ecac5`. [`reports/m15/full/CHECK_A.md`](reports/m15/full/CHECK_A.md); the rerun's reports are kept in `reports/m15/full/notebook_a/` and never replace the committed ones.
-- **Notebook B on Kaggle: PASS (2026-11-18).** Kaggle T4, 4 threads, fresh clone at `c7ba2d6`, the public dataset and Gemma 2 2B attached. All 6 steps exited 0, in 4.8 h (05:08 to 09:56; the estimate was 5 h). Both `e4_added` refits are within ±0.005 of M9's committed scores in every window: M10 largest 0.0016 (t5), M11 largest 0.0018 (t4); 12 cells. Recomputed locally from the zip against `HEAD`. The verifier on the smaller sample (100 rows per client and window, 2,837 sent) is reported, not tested, and repeats M11: boundary E5 0.6743 against the edge's 0.6764 with the same false-positive rate, valid 0.561 on the first try and 1.000 after retries, 0.965 grounded, 84.9 calls per 1k rows at the boundary. [`reports/m15/full/CHECK_B.md`](reports/m15/full/CHECK_B.md); reports in `reports/m15/full/notebook_b/`; the LLM log is released as `release/llm_logs/m15_notebook_b_gemma2-2b_seed42.jsonl.gz`.
-- **What it covers:** this checks seed 42, not the three-seed means. Tier 1 put the seed spread at about 0.0004 for E3 and E4, so one seed inside ±0.005 is strong evidence for the table, but not the table itself.
-
-*Released artifacts:* `scripts/m15_release.py` writes `release/`.
-- `experiment_config.json`: the resolved headline config, Kaggle environment, seed 42, 4 threads.
-- `client_partitions.json` and `window_definition.json`: from M2's full pool.
-- `model_hparams.json`: the config sections that set models and training (`models`, `incremental`, `distill`, `fedavg`, `schedule`, `drift`, `gate`, `llm`, `policy`, `explain`).
-- Every LLM log, gzipped (about 3 MB a seed): M11 seeds 42–44, the Mistral subset, M12.
-- `MANIFEST.json` with a SHA-256 for each file and the commit.
-
-*Paper artifacts (after the notebooks):*
-- **Tables and figures:** one script maps the existing `reports/m14/full/` outputs onto the outline's results sections.
-- **System and threat model, with the privacy analysis (D5):** drafted in `paper/threat_model.md`, covering what leaves a client (soft labels on D_pub, drift statistics, escalated evidence) and what an honest-but-curious server learns from it.
-
----
-
-## Progress log
-
-| Date | Milestone | Summary |
+| Stage | Script(s) | Produces |
 |---|---|---|
-| 2026-11-04 | — | Plan created: dataset profiled (8.78M rows, 19 classes, no BLE/device columns), environment checked, milestones M0–M15 defined. |
-| 2026-11-04 | — | BLE data found: downloaded the Zenodo CICIoMT2024 derivative (CC BY 4.0; Bluetooth 1.55M packet rows; Wi-Fi parquet with device `source_file` + official split). t4 can now include BLE DoS. |
-| 2026-11-04 | M0 ✅ | Scaffolding done: package `ids`, layered configs (local/kaggle), seeding, JSONL logging, run snapshots, Kaggle bootstrap notebook; 6 tests pass. Compute plan set to hybrid local + Kaggle. Repo pushed to GitHub. |
-| 2026-11-04 | M1 ✅ | Data prep done: 8.78M rows → 249 MB Parquet (lossless, fixed label codes), dev sample 568k, BLE relabelled, 42 device-profiling captures extracted. EDA found the IAT/timestamp shortcut features → new decision D6 (exclude IAT by default). Only `Drate` is constant; 7,379 duplicates with no label conflicts. 13 tests pass. |
-| 2026-11-04 | M2 ✅ | Partitions built (dev + full, headline + alt timeline): 15 Dirichlet non-IID clients with real device ownership, population drift at t5, D_pub 17.9k, BLE 3-client sub-federation from t4. Duplicates dropped before splitting. Deterministic (byte-identical rebuild). 20 tests pass. |
-| 2026-11-04 | M3 ✅ (dev) | Edge ensemble (XGB+LGBM, fixed 6-class space, val-tuned fusion + temperature). Dev pool: E1 window-avg macro-F1 0.891 vs static 0.390 (static falls to 0.16 by t5). Main error: DoS↔DDoS. IAT A/B shows IAT makes DoS/DDoS trivially separable (0.82→0.9997), which supports D6. BLE 0.99. Kaggle notebook for the full pool added. 25 tests pass. |
-| 2026-11-04 | D2 change | README audit against the repo and the proposal. D_pub now follows the proposal (5,000 benign + 1% of each attack category: 90,429 rows, was 17,913), so M2 was rebuilt and M3 rerun on dev: E1 0.891 and static 0.387 window-average. Corrected figures, added hypotheses, experiment matrix, data source, full Quickstart. Reproduction tolerance fixed from ±0.5 to ±0.005 macro-F1. |
-| 2026-11-04 | M4 ✅ (dev) | Shared evaluation harness: detection metrics including one-vs-rest AUC, confusion per window and client cluster, forgetting, time-to-recover, per-component latency, model cost. M3 reproduced byte for byte through it, and reloaded models match the logged numbers. New findings: `Number`/`Weight` look like aggregation artifacts but barely matter; benign profiling rows are perfectly separable and inflate benign F1, so all metrics are now also reported without them (D7, open). 39 tests pass. |
-| 2026-11-04 | Data check, full pool | CSV provenance settled: merged by the author from the CICIoMT2024 CSVs, and it matches the Zenodo copy row for row on all features and labels. First Kaggle run came back (M3, 75 min) but predates the D_pub change, so its results are stored as provisional: E1 0.891 and static 0.414 window-average. Scored through M4: regression check passed; removing profiling rows costs 0.002 window-average macro-F1 and 0.03 t5 benign F1 on the full pool. Final Kaggle rerun pending. |
-| 2026-11-04 | M5 ✅ (dev) | ADWIN (matches `river` on 40 synthetic streams), PSI/KL/Wasserstein per client, gate tuned on validation rows, drift registry. No false alarms in 93k shuffled rows; error rate caught at t1–t4. Main finding: the old model at t1 is confidently wrong and escalates nothing, while PSI sees the shift (new open decision D8). D7 decided: `csv_only` is the headline. Acceptance partly met; the Kaggle notebook now runs M3 to M5 in one go. |
-| 2026-11-04 | M3–M5 full pool | Final Kaggle run at `4521a07` (M3 51 min, M4 6 min, M5 7 min) replaces the provisional results. Headline, CSV rows only: E1 0.890 window-average and 0.867 at t5; static 0.402 and 0.184. M5: error-rate ADWIN catches all 33 affected clients with no false alarms in 1.45M rows; the gate is still blind at t1 (D8); PSI is weak after t1; the 10% budget catches 24% of errors. |
-| 2026-11-04 | M6 ✅ (dev) | Per-client continued boosting with a class-balanced buffer, over 3 seeds. Forgetting 0.035 naïve, 0.028 with 2,000 rows, 0.022 with 8,000; the buffer stays within budget, so acceptance is met on dev. Macro-F1 does not move (all 0.912–0.913), because old classes recur in this timeline. Local models beat E1 (0.884), mostly on DDoS/DoS, which is likely a client label-mix effect. Full-pool notebook ready, not yet run. 56 tests pass. |
-| 2026-11-06 | M6 full pool | Kaggle run at `bfed6a9` (2 h 38 min, one seed). Forgetting 0.024 naïve, 0.022 with 2,000 rows, 0.019 with 8,000; the buffer stays within budget, so acceptance is met on this seed, though at 2,000 rows nearly all of the gain is Spoofing. Macro-F1 does not move (0.921). Local models beat E1 (0.890) by 0.031, mostly on DDoS/DoS. |
-| 2026-11-06 | M7 🟨 (dev) | DA-FedDistill as the proposal specifies, plus FedMD, over 3 seeds. **Acceptance not met:** E3 0.9125 vs local-only 0.9119 on window average (within noise), and worse at t5 in all seeds (0.878 vs 0.882). H1 holds against static, not against naïve. FedMD is 0.038 below local-only. A client guard, added after seeing results, beats local-only in all seeds (0.9157, new open decision D9). Fixed an underconfident g_t (ECE 0.194 → 0.014). Full-pool notebook ready, not yet run. 75 tests pass. |
-| 2026-11-06 | M7 Kaggle crash | The first full-pool attempt finished all six E3 windows, then died after FedMD's t2, with no error in the log. **Cause not known yet.** A local replay of FedMD's training through t3 on the full pool, without evaluation or the E3 pass, did not crash and stayed near 2.3 GB, so the digest step on this data is not enough to explain it, on Windows with xgboost 3.2.0 (Kaggle has 3.4.1). The script gains `--only` and `--report` and logs memory; a dev run split this way reproduces `results.csv` and the other result tables exactly. |
-| 2026-11-06 | M7 ✅ full pool | Kaggle run at `b67af92` (about 2 h 3 min, one seed). E3 0.9257 vs local-only 0.9210 on window average, so acceptance is met there, but E3 is behind at t4 and t5 (t5 0.8947 vs 0.8972) and most clients lose from t3 on. `e3_guard` 0.9288, FedMD 0.8872. **Crash:** the same FedMD t3 step passed this time with a 4.2 GB peak of 31.3 GB, so this run gives no sign of a memory problem. The first attempt's cause is still unknown. |
-| 2026-11-06 | D9 decided | `e3` stays the proposal's E3, and `e3_guard` is carried as a named addition. A second full-pool seed (43) is being run, because dev and full disagree on E3 vs local-only; `notebooks/m7_kaggle.ipynb` now takes `SEED`. |
-| 2026-11-06 | M7 full pool, seed 43 | Kaggle run at `e1f265b`. E3 0.9251 vs local-only 0.9209 on window average, t5 0.8949 vs 0.8965, the same pattern as seed 42. `e3_guard` 0.9283 and ahead at t5 in both seeds. E3's test escalation reached 10.6% once, over the 10% budget, on next-window traffic. `m7_seeds.py` now compares only the methods every run has. No crash in this run, so the first attempt's cause stays unknown. |
-| 2026-11-06 | D8, D10 decided | The user asked for the recommended options. D8: the headline gate keeps the proposal's rule, and a PSI flag becomes a sensitivity run in M9. D10: 10% stays the headline operating point, as a tuning target and not a cap, with the frontier reported. The M6 comparison at full-pool seed 43 isn't needed. |
-| 2026-11-06 | M8 🟨 (dev) | FedAvg and FedProx on an MLP, 3 seeds. FedAvg 0.8156 and FedProx 0.8236 on window average, against E3 0.9125; 0.34 without updates. Acceptance met. Local-only is just as far ahead, so this doesn't isolate distillation as the cause. Lr 0.1 chosen on validation rows. Full-pool notebook ready, not yet run. 89 tests pass. |
-| 2026-11-07 | M8 full pool, first run | Kaggle at `cacb3d1`. Lr 0.1 from the dev sweep is unstable on the full pool: FedAvg 0.8267 and 0.6063 on window average across two seeds, collapsing on validation rows too. Kept in `reports/m8/full/lr0.1/`, not used as the result. Added a validation-only lr sweep on the full pool ahead of the final passes. |
-| 2026-11-07 | M8 ✅ | Kaggle at `e05ff79`, seeds 42 and 43. Lr 0.03 chosen on full-pool validation rows; lr 0.1's collapse reproduced. FedAvg 0.8434 ± 0.0029, FedProx 0.8425 ± 0.0021, no real difference between them; E3 0.9254, local 0.9209. Rehearsal doesn't help FedAvg. The gap mixes model family with federation, so the claim is about this MLP. |
-| 2026-11-07 | M8 check | Recomputed the M8 numbers from raw outputs: they match, apart from one rounding corrected in this README (0.0143 to 0.0142). The `git_dirty` flag on all Kaggle runs is not traced: added `notebooks/m8_dirty_check.ipynb` and a `git_changed` field to every run's `environment.json`. |
-| 2026-11-08 | M11 🟨 (built) | Design fixed in the README before any result. Verifier module (payload, JSON contract, retry with the error, fallback, D3, JSONL log), a read-only hook in M9's gate, `scripts/m11_verify.py` and `notebooks/m11_kaggle.ipynb` (Gemma 2 2B, 4-bit, T4). Dev pipeline check with a stub: refit matches M9 exactly at 4 threads, outputs checked separately. Full pool on Kaggle next. |
-| 2026-11-09 | M11 ✅ | Full pool, Gemma 2 2B, seeds 42 and 43, checked separately. The verifier lowers macro-F1 slightly in every setting (boundary E5 0.6763 / 0.6776 against the edge's 0.6776 / 0.6785) and never changes the false-positive rate, so H3 isn't supported with this model. D3 holds the loss to at most 0.003; without it, always-on rows lose 0.19 to 0.23. Gemma relabels nearly every ddos as dos. ≥99% valid after retries. Mistral 7B subset open. |
-| 2026-11-10 | M11 Mistral subset | Mistral 7B Instruct v0.2 on 4,960 of seed 42's verifier rows, paired with Gemma. It agrees with the edge on 99.85% of valid replies (2 D3 changes), is 81% valid after retries (below the 99% bar; `\_` escapes are the main cause), and runs at 0.32 rows per second. H3 not supported with either model. |
-| 2026-11-10 | M12 🟨 (built) | Design fixed in the README before any result: one policy per client and window at its first update point; six fields mapped to update timing, learning rate and tree budget, buffer weight, feature weights, buffer selection, and refit scope. Arms none, heuristic and llm. Dev check: none matches M9 exactly, and the llm path reproduces the heuristic exactly. `notebooks/m12_kaggle.ipynb` for the full pool with Gemma 2 2B. |
-| 2026-11-10 | M12 🟨 (seed 42) | Full pool, seed 42: none 0.9241 window average (within 0.0011 of M9's E4), heuristic 0.9241, llm (Gemma 2 2B) 0.8218. Gemma chose urgency low at all 75 decisions, so at t2 and t4 only 3 and 2 of 15 clients updated. A first run had failed because the processed dataset wasn't attached; the notebook now checks for it. Seed 43 pending. |
-| 2026-11-10 | M13 🟨 (built) | Design fixed in the README before any result: E7 as horizontal federated XGBoost by histogram aggregation (XGBoost's collective, one worker process per client, relaxed privacy), incremental per window, M6's budgets, global balanced weights. Deviation: histogram aggregation instead of the LSH method of [16]. Protocol test and a 3-client smoke run pass locally; `notebooks/m13_kaggle.ipynb` runs dev and full on a Kaggle CPU session. M12 seed 43 waits for the GPU quota. |
-| 2026-11-15 | M14 design | Design fixed in the README before any run: three tiers (seed 44 and ablations on `e4_added`; ten sensitivity variants at one seed; frontier and H4 from stored logs), client bootstrap with Holm correction and a 0.005 size floor, one report script. H4's rubric (c) dropped because it wasn't fixed before M11's outputs were read. |
-| 2026-11-15 | M14 part A | Seeds 42, 43 and 44 on Kaggle CPU at `782bd03`, clean, with per-client counts. Reruns match the published M4 and M8 exactly. M3, M6 and M7 move by at most 0.0008 in window average, within thread noise. Three seeds: E3 0.9256 ± 0.0004 against local-only 0.9207 ± 0.0004, ahead in window average and behind at t5 in every seed. |
-| 2026-11-15 | M14 part B | M9 with the E4 ablations and M13, seeds 42, 43 and 44, Kaggle CPU at `1e52d49`. E4 (`e4_added`) 0.9241 ± 0.0004, 0.0015 below E3. No ablation (no ADWIN trigger, all features, no rehearsal) moves window average by more than 0.0014; the fixed schedule without the trigger is ahead of E4 in every seed. Plain-ADWIN `e4` at seed 42 moved 0.8315 → 0.8418 on rerun (cause not traced). E7 0.8814 in all three seeds. |
-| 2026-11-18 | History rewrite | At the user's request, removed the `Co-Authored-By: Claude` line from 47 commit messages and force-pushed `main`. Files, authors and dates of every commit are unchanged (trees checked pair by pair); the IDs of the 72 commits after the first one changed. The old IDs in this README, `reports/m14/full/sources.csv`, `reports/m8/full/dirty_check.json`, `notebooks/m8_dirty_check.ipynb` and `release/MANIFEST.json` were replaced by the new ones; [`reports/commit_map.csv`](reports/commit_map.csv) maps every old ID (including those Kaggle runs recorded) to its new one, and `scripts/m14_report.py` uses it. |
-| 2026-11-18 | M15 ✅ | Notebook B on Kaggle T4 at `c7ba2d6`: 6 steps clean in 4.8 h; both E4 refits within 0.0018 of M9 (12 cells, recomputed locally); the smaller-sample verifier repeats M11 (E5 0.6743 vs edge 0.6764 at the boundary). With Notebook A, the acceptance is met: a fresh environment reproduces the headline within ±0.005. M0–M15 complete. |
-| 2026-11-18 | M15 Notebook A | Kaggle CPU at `31ecac5`, fresh clone with the public dataset: all 12 steps clean in 10.2 h; the check passes on all 56 headline cells (E1, static, naïve, local + rehearsal, E3, E4, E7), largest difference 0.0014, recomputed locally. Outputs in `reports/m15/full/`. |
-| 2026-11-17 | M12 seed 44 | Kaggle T4 at `eca6aa2`, clean: none 0.9245 (within 0.0008 of M9's E4), heuristic 0.9232, llm 0.8265; Gemma again picks urgency low at all 75 decisions. Three seeds: none 0.9241 ± 0.0005, heuristic 0.9234 ± 0.0006, llm 0.8252 ± 0.0029. M14 tier 3 (H4 b), the release logs and the paper tables now include it. |
-| 2026-11-17 | M15 🟨 (built) | `release/` (configs, partitions, gzipped LLM logs, SHA256SUMS, MANIFEST), `scripts/m15_check.py`, Notebooks A and B, `scripts/m15_paper.py` (seven tables, two figures, outline map), `paper/threat_model.md`. CIC's terms allow redistribution with citation; processed data published as a public Kaggle dataset. Dev rehearsal of Notebook A: M2–M9 pass (largest difference 0.0008, E1); M13 not rehearsed locally (out of memory). Notebooks A and B not yet run on Kaggle. |
-| 2026-11-17 | M14 H4 (c) for the record | `scripts/m14_h4c.py`: blinded 200-text sheet (100 rows of M11 seed 42, SHAP-only template vs Gemma's text), rubric fixed now and disclosed as not preregistered. Automatic items: label correct 0.70 SHAP-only vs 0.45 Gemma (McNemar p = 0.001); no Gemma reply names a concrete operator action (0 of 14,066). Human scoring pending. |
-| 2026-11-17 | M14 ✅ (tier 2) | Ten sensitivity variants on Kaggle CPU at seed 42 and `0922698`, clean, about 6.5 h each; counts reproduce every stored window average. E3's gain over local-only is never significant on the positive side. Under α 0.1 E3 collapses (0.709 against local 0.957, worse on 14 of 15 clients), the same failure as benign-only D_pub. The reseeded partition moves E3 by 0.010, 25× the seed spread. The official split lowers every method by 0.03–0.05. IAT lifts all methods to about 0.99 (D6). E4 never beats E3. |
-| 2026-11-16 | M14 tier 3 ✅ | `scripts/m14_tier3.py`, from stored logs. Frontier: own-window thresholds catch 24/44/72/85% of edge errors at 5/10/20/30%, but only 16/21/33/38% after drift; E5 below the edge and FP unchanged at every budget. H4 (a) strict groundedness 0.36 (M11's weak check said 0.97); (b) 0.56 valid first try, 0.9999 after retries. M12 seed 44 skipped (GPU). |
-| 2026-11-16 | M14 tier 1 ✅ | `scripts/m14_report.py` and `reports/m14/full/`: client-bootstrap intervals with Holm over five tests. H1 holds against static (+0.530) and not against naïve (+0.0044, interval includes 0). H2 isn't supported (time-to-recover equal, E4 slightly more variable). H3 isn't supported (FP rate identical). Of the E4 ablations, only D_pub benign-only passes the rule. Every source reproduces its stored numbers from per-client counts. |
-| 2026-11-16 | M14 M11 seed 44, D_pub benign-only | M11 seed 44 on Kaggle T4 at `c15acd1`, clean: boundary E5 0.6639 against edge 0.6652, false-positive rate unchanged; three seeds E5 0.6726 ± 0.0076 against 0.6738 ± 0.0074, so H3 isn't supported. Gemma again turns every escalated ddos into dos. Benign-only D_pub, seeds 42 to 44 at `6a745fc`, clean: E3 0.5671 ± 0.1285 and E4 0.4794 ± 0.0237 against 0.9256 and 0.9241 with the proposal's D_pub; guarded versions match local-only (0.921). Distillation needs attack rows in D_pub. |
-| 2026-11-16 | M14 benign-only D_pub, built | `notebooks/m14_variant_kaggle.ipynb` for E3 and E4 on the benign-only D_pub partition, seeds 42, 43 and 44 on Kaggle CPU. Dev pipeline check passes (E3 falls to 0.6056 on dev, a check and not a result). Fixed: a variant build of M2 no longer overwrites the headline M2 report. Full-pool runs next. |
-| 2026-11-14 | M12 ✅ | Full pool, seed 43 on Kaggle at `f4a0840`, clean: none 0.9236 (within 0.0002 of M9's E4), heuristic 0.9229, llm 0.8271. Gemma again picks urgency low at all 75 decisions; 4 and 1 of 15 clients update at t2 and t4. Two-seed means: none 0.9238, heuristic 0.9235, llm 0.8245. |
-| 2026-11-10 | M13 ✅ | Full pool, seed 42 on Kaggle CPU (19 min): E7 window average 0.8814, 0.0083 below E1 and 0.044 below E3. The uplink upper bound is 1.0 to 13.9 GB per client per window against E3's 1.3 to 4.3 MB. Dev pool: 0.8811. |
-| 2026-11-08 | M10 ✅ | Full pool, seeds 42 and 43, at `906f4ae`, all runs clean, figures recomputed from the stores. Local TreeSHAP costs about 100 times inference on one thread (36.5 and 40.2 ms per row at t5), so explaining every prediction isn't practical. The SHAP drift signal is above its noise floor at t1, t3 and t5 in both seeds and at the floor at t4. The refit differs from M9's scores by up to 0.0016 from t2 on, the known unexplained rerun drift. The first Kaggle attempt failed on a stale clone; the notebook now stops early on one. |
-| 2026-11-08 | M10 🟨 (dev) | TreeSHAP of `e4_added` (D11) built with XGBoost's and LightGBM's own exact TreeSHAP: local top-5 store, global rankings, SHAP drift signal, cost. The refit matches M9 exactly. Local SHAP costs about 140 times inference at t5 on one thread. The drift signal is small but above its noise floor at every boundary, t1 included. Full pool next. |
-| 2026-11-08 | D11 decided | The user chose `e4_added` (the trigger added to the fixed schedule) as the E4 that E5 and E6 build on. It was chosen after seeing the full-pool results, and is reported that way. `e4` stays in the M9 report. |
-| 2026-11-08 | M9 ✅ | Full pool, seeds 42 and 43, at `4262f99`, all runs clean and recomputed from confusion counts. E4 scores 0.8360 against E3's 0.9256 with nine times the variance, so H2 isn't supported for E4 as defined. Its window-end loss is on each window's new class at t2, t4 and t5, where few clients trigger. Adding the trigger to the schedule scores 0.9240 and is faster at one boundary of five. The drift score adds nothing over a fixed gate at the same cost, and t1 stays blind. Which E4 to carry forward is the user's call. |
-| 2026-11-07 | M9 🟨 (dev) | E4 built: ADWIN trigger inside windows, top-K limiting new trees, drift score and adaptive gate, one seed on dev. `fixed` reproduces E3 exactly. Replacing the schedule scores 0.8085 against E3's 0.9130, adding the trigger to it 0.9079, and both serve much better during a window. The drift score adds nothing clear. Full pool next. |
-| 2026-11-07 | `git_dirty` traced | Kaggle check at `e05ff79`: the M2 step changes only three figure PNGs, which nothing reads, and the partition matches the local build row for row in all 6 files. Kaggle notebooks now restore those PNGs after M2. |
-| 2026-11-07 | M9 plan extended | Checked whether the drift-score adaptive threshold (explanation document, Methodology Step 5) exists. It doesn't: M5 has a hard flag, and M7 re-picks one global τ pair without a drift score. Added to M9, with a fixed vs adaptive gate comparison in its acceptance. |
+| Data | `m1_prepare_data.py`, `m1_eda.py` | processed Parquet, EDA |
+| Partition | `m2_build_partitions.py` | drift timeline, 15 clients, D_pub |
+| Edge ensemble | `m3_baselines.py`, `m3_shortcut_checks.py`, `m4_evaluate.py` | E1, static, shortcut-feature checks |
+| Drift and gate | `m5_drift.py` | ADWIN, distribution shift, uncertainty gate |
+| Incremental | `m6_incremental.py` | naïve incremental, local + rehearsal |
+| DA-FedDistill | `m7_distill.py` | E3, client guard, FedMD |
+| Neural FL | `m8_fedavg.py`, `m8_lr_sweep.py` | E2 FedAvg / FedProx |
+| Drift-triggered | `m9_e4.py` | E4 and its variants |
+| Explanations | `m10_shap.py` | TreeSHAP attributions and store |
+| LLM verifier | `m11_verify.py`, `m11_subset.py` | E5 gated, E6 always-on; Mistral 7B subset |
+| LLM policy | `m12_policy.py` | none / heuristic / LLM policy arms |
+| Federated GBDT | `m13_fedgbdt.py` | E7 |
+| Evaluation | `m14_report.py`, `m14_variant.py`, `m14_h4c.py` | headline, hypotheses, ablations, sensitivity, H4 |
+| Release | `m15_release.py`, `m15_check.py` | `release/`, reproduction checks |
+
+```bash
+python scripts/m2_build_partitions.py                                       # both pools
+python scripts/m7_distill.py --pool dev --set resources.n_jobs=4            # E3 + FedMD on the dev sample
+python scripts/m7_distill.py --pool full --set resources.n_jobs=4 seed=43 --tag seed43   # another seed, own folder
+python scripts/m14_report.py                                                # aggregates the seeds into reports/m14/full/
+```
+
+The `notebooks/m*_kaggle.ipynb` notebooks run each stage on Kaggle.
+
+## Released artifacts
+
+[`release/`](release/) holds the following, each listed with its SHA-256 in `MANIFEST.json`:
+- the resolved experiment configuration;
+- model hyperparameters;
+- the client partition and window definitions;
+- every LLM prompt and reply (gzipped JSONL, with schema validity and retry counts).
+
+## Data sources and citation
+
+If you use the data, cite the original dataset and, for the BLE and device-profiling files, the derivative:
+
+- S. Dadkhah, E. C. P. Neto, R. Ferreira, R. C. Molokwu, S. Sadeghi, A. A. Ghorbani. "CICIoMT2024: A benchmark dataset for multi-protocol security assessment in IoMT." *Internet of Things*, 28, 101351, 2024. [doi:10.1016/j.iot.2024.101351](https://doi.org/10.1016/j.iot.2024.101351)
+- V. J. L. Engel, D. Angela, A. Latif, S. A. Kristyan. "CICIoMT2024 Cleaned Dataset and EDA Outputs." Zenodo, 2026. [doi:10.5281/zenodo.19452870](https://doi.org/10.5281/zenodo.19452870)
+
+## License
+
+The code is released under the [MIT License](LICENSE). The data remain under their own terms:
+- CICIoMT2024: the Canadian Institute for Cybersecurity's terms, which allow redistribution with citation.
+- Zenodo-derived files: CC BY 4.0.
