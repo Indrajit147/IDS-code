@@ -29,6 +29,8 @@ from ids.utils.config import REPO_ROOT, load_config
 import m14_tier3  # noqa: E402  (scripts/ is on the path when run as a script)
 
 REP, RUNS = REPO_ROOT / "reports", REPO_ROOT / "results" / "runs"
+# runs made before the 2026-11-18 history rewrite recorded the old commit IDs; same files under the new ones
+NEW_ID = dict(pd.read_csv(REP / "commit_map.csv").values) if (REP / "commit_map.csv").exists() else {}
 SEEDS, WINDOWS, C = (42, 43, 44), range(6), 15
 K = len(CATEGORIES)
 FLOOR = 0.005        # size floor for a macro-F1 difference (README, M14 decision rule)
@@ -235,7 +237,7 @@ def provenance(d: Path) -> dict:
     bad = [x for x in e.get("git_changed", []) if not x.split()[-1].strip('"').startswith("reports/")]
     if e.get("git_dirty") and not e.get("git_changed"):
         bad = ["dirty, changed files not recorded"]
-    return {"folder": rel, "run": rid, "commit": e["git_commit"][:7], "dirty_outside_reports": "; ".join(bad)}
+    return {"folder": rel, "run": rid, "commit": NEW_ID.get(e["git_commit"], e["git_commit"])[:7], "dirty_outside_reports": "; ".join(bad)}
 
 
 # ---------- report ----------
