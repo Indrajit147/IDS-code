@@ -1,0 +1,186 @@
+{
+  "pool": "full",
+  "seed": 42,
+  "margin_agreement": 0.9996991408800686,
+  "payload_bytes_mean": 175.16634166453093,
+  "rows_explained": 89743,
+  "cost_by_window": {
+    "0": {
+      "rows": 982.87,
+      "shap_us_per_row": 1596.02,
+      "infer_us_per_row": 28.09,
+      "shap_us_per_row_1thread": 3852.77,
+      "infer_us_per_row_1thread": 33.78,
+      "xgb_trees": 300.0,
+      "lgb_trees": 300.0
+    },
+    "1": {
+      "rows": 1000.0,
+      "shap_us_per_row": 4893.71,
+      "infer_us_per_row": 59.47,
+      "shap_us_per_row_1thread": 11462.97,
+      "infer_us_per_row_1thread": 106.4,
+      "xgb_trees": 880.8,
+      "lgb_trees": 723.2
+    },
+    "2": {
+      "rows": 1000.0,
+      "shap_us_per_row": 7111.52,
+      "infer_us_per_row": 75.03,
+      "shap_us_per_row_1thread": 16597.42,
+      "infer_us_per_row_1thread": 153.29,
+      "xgb_trees": 1224.4,
+      "lgb_trees": 965.6
+    },
+    "3": {
+      "rows": 1000.0,
+      "shap_us_per_row": 10318.12,
+      "infer_us_per_row": 98.34,
+      "shap_us_per_row_1thread": 24014.56,
+      "infer_us_per_row_1thread": 230.43,
+      "xgb_trees": 1755.2,
+      "lgb_trees": 1297.6
+    },
+    "4": {
+      "rows": 1000.0,
+      "shap_us_per_row": 12182.41,
+      "infer_us_per_row": 113.91,
+      "shap_us_per_row_1thread": 28038.69,
+      "infer_us_per_row_1thread": 266.78,
+      "xgb_trees": 2058.4,
+      "lgb_trees": 1456.4
+    },
+    "5": {
+      "rows": 1000.0,
+      "shap_us_per_row": 13614.26,
+      "infer_us_per_row": 124.05,
+      "shap_us_per_row_1thread": 31739.84,
+      "infer_us_per_row_1thread": 312.62,
+      "xgb_trees": 2332.8,
+      "lgb_trees": 1602.4
+    }
+  },
+  "drift_by_boundary": {
+    "1": {
+      "rows_new": 1000.0,
+      "rows_ref": 982.8667,
+      "change_new": 0.0147,
+      "top_overlap_new": 0.96,
+      "change_control": 0.0039,
+      "top_overlap_control": 0.9867
+    },
+    "2": {
+      "rows_new": 1000.0,
+      "rows_ref": 1000.0,
+      "change_new": 0.0036,
+      "top_overlap_new": 0.9733,
+      "change_control": 0.0014,
+      "top_overlap_control": 1.0
+    },
+    "3": {
+      "rows_new": 1000.0,
+      "rows_ref": 1000.0,
+      "change_new": 0.0098,
+      "top_overlap_new": 0.9333,
+      "change_control": 0.0015,
+      "top_overlap_control": 0.96
+    },
+    "4": {
+      "rows_new": 1000.0,
+      "rows_ref": 1000.0,
+      "change_new": 0.0022,
+      "top_overlap_new": 0.96,
+      "change_control": 0.0021,
+      "top_overlap_control": 0.96
+    },
+    "5": {
+      "rows_new": 1000.0,
+      "rows_ref": 1000.0,
+      "change_new": 0.0117,
+      "top_overlap_new": 0.8667,
+      "change_control": 0.0019,
+      "top_overlap_control": 0.96
+    }
+  },
+  "share_above_control": {
+    "1": 0.933,
+    "2": 0.533,
+    "3": 0.867,
+    "4": 0.6,
+    "5": 0.6
+  },
+  "top10_by_window": {
+    "0": [
+      "Number",
+      "AVG",
+      "Tot_size",
+      "Variance",
+      "Srate",
+      "syn_flag_number",
+      "Min",
+      "Covariance",
+      "ack_flag_number",
+      "ICMP"
+    ],
+    "1": [
+      "Number",
+      "Header_Length",
+      "Rate",
+      "Srate",
+      "AVG",
+      "Variance",
+      "Protocol_Type",
+      "syn_count",
+      "Tot_size",
+      "UDP"
+    ],
+    "2": [
+      "Number",
+      "Header_Length",
+      "Rate",
+      "Srate",
+      "rst_count",
+      "AVG",
+      "syn_count",
+      "Protocol_Type",
+      "Variance",
+      "Tot_size"
+    ],
+    "3": [
+      "Number",
+      "rst_count",
+      "Header_Length",
+      "Rate",
+      "Variance",
+      "Srate",
+      "AVG",
+      "Tot_size",
+      "syn_count",
+      "Magnitue"
+    ],
+    "4": [
+      "Number",
+      "rst_count",
+      "Header_Length",
+      "Rate",
+      "Srate",
+      "Variance",
+      "Tot_size",
+      "AVG",
+      "Magnitue",
+      "syn_count"
+    ],
+    "5": [
+      "Number",
+      "Header_Length",
+      "rst_count",
+      "Rate",
+      "Srate",
+      "Variance",
+      "fin_count",
+      "Tot_size",
+      "AVG",
+      "syn_count"
+    ]
+  }
+}

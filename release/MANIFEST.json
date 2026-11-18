@@ -1,5 +1,5 @@
 {
-  "commit": "c482881",
+  "commit": "21c843b",
   "missing_logs": [],
   "files": {
     "client_partitions.json": {
@@ -41,6 +41,10 @@
     "llm_logs/m12_gemma2-2b_seed44.jsonl.gz": {
       "bytes": 12478,
       "sha256": "0b0ac42765e28076af511035ad1e7990b81ae9b356b2016868f8e9f24d21f3e5"
+    },
+    "llm_logs/m15_notebook_b_gemma2-2b_seed42.jsonl.gz": {
+      "bytes": 683258,
+      "sha256": "7f5ebadfca1f3786b6e736e34dd8dfcdba78ba46d297bb421289a1e03c84b2bf"
     },
     "model_hparams.json": {
       "bytes": 2237,

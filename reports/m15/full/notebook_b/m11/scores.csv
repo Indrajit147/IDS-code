@@ -1,0 +1,78 @@
+rows_set,setting,eval_window,method,rows,macro_f1,fp_rate,benign_rows,miss_rate
+sample,boundary,1,pred,1500,0.500086,0.0,40,0.0
+sample,boundary,1,e5,1500,0.500086,0.0,40,0.0
+sample,boundary,1,e5_free,1500,0.500086,0.0,40,0.0
+always_on,boundary,1,pred,150,0.496528,0.0,5,0.0
+always_on,boundary,1,e5,150,0.496528,0.0,5,0.0
+always_on,boundary,1,e6,150,0.496528,0.0,5,0.0
+always_on,boundary,1,e6_free,150,0.496528,0.0,5,0.0
+sample,boundary,2,pred,1500,0.639244,0.0,45,0.013058
+sample,boundary,2,e5,1500,0.638763,0.0,45,0.013058
+sample,boundary,2,e5_free,1500,0.635964,0.0,45,0.013058
+always_on,boundary,2,pred,150,0.671011,0.0,3,0.006803
+always_on,boundary,2,e5,150,0.667271,0.0,3,0.006803
+always_on,boundary,2,e6,150,0.667271,0.0,3,0.006803
+always_on,boundary,2,e6_free,150,0.330075,0.0,3,0.006803
+sample,boundary,3,pred,1500,0.605731,0.0,32,0.002044
+sample,boundary,3,e5,1500,0.600986,0.0,32,0.002044
+sample,boundary,3,e5_free,1500,0.598909,0.0,32,0.002044
+always_on,boundary,3,pred,150,0.61344,0.0,3,0.0
+always_on,boundary,3,e5,150,0.607664,0.0,3,0.0
+always_on,boundary,3,e6,150,0.607664,0.0,3,0.0
+always_on,boundary,3,e6_free,150,0.385162,0.0,3,0.0
+sample,boundary,4,pred,1500,0.767232,0.029412,34,0.002729
+sample,boundary,4,e5,1500,0.763992,0.029412,34,0.002729
+sample,boundary,4,e5_free,1500,0.765184,0.029412,34,0.002729
+always_on,boundary,4,pred,150,0.772835,0.0,4,0.006849
+always_on,boundary,4,e5,150,0.764442,0.0,4,0.006849
+always_on,boundary,4,e6,150,0.761722,0.0,4,0.006849
+always_on,boundary,4,e6_free,150,0.556878,0.0,4,0.006849
+sample,boundary,5,pred,1500,0.869608,0.052632,38,0.001368
+sample,boundary,5,e5,1500,0.8676,0.052632,38,0.001368
+sample,boundary,5,e5_free,1500,0.860741,0.052632,38,0.001368
+always_on,boundary,5,pred,150,0.941397,0.0,6,0.0
+always_on,boundary,5,e5,150,0.93608,0.0,6,0.0
+always_on,boundary,5,e6,150,0.93608,0.0,6,0.0
+always_on,boundary,5,e6_free,150,0.745935,0.0,6,0.0
+sample,own window,0,pred,1500,1.0,0.0,113,0.0
+sample,own window,0,e5,1500,1.0,0.0,113,0.0
+sample,own window,0,e5_free,1500,1.0,0.0,113,0.0
+always_on,own window,0,pred,150,1.0,0.0,9,0.0
+always_on,own window,0,e5,150,1.0,0.0,9,0.0
+always_on,own window,0,e6,150,1.0,0.0,9,0.0
+always_on,own window,0,e6_free,150,1.0,0.0,9,0.0
+sample,own window,1,pred,1500,0.916577,0.0,34,0.0
+sample,own window,1,e5,1500,0.916577,0.0,34,0.0
+sample,own window,1,e5_free,1500,0.914753,0.0,34,0.0
+always_on,own window,1,pred,150,0.898258,0.0,4,0.0
+always_on,own window,1,e5,150,0.898258,0.0,4,0.0
+always_on,own window,1,e6,150,0.898258,0.0,4,0.0
+always_on,own window,1,e6_free,150,0.48227,0.0,4,0.0
+sample,own window,2,pred,1500,0.929895,0.0,22,0.0
+sample,own window,2,e5,1500,0.930287,0.0,22,0.0
+sample,own window,2,e5_free,1500,0.920752,0.0,22,0.0
+always_on,own window,2,pred,150,0.940525,0.0,1,0.0
+always_on,own window,2,e5,150,0.940525,0.0,1,0.0
+always_on,own window,2,e6,150,0.940525,0.0,1,0.0
+always_on,own window,2,e6_free,150,0.633838,0.0,1,0.0
+sample,own window,3,pred,1500,0.93646,0.032258,31,0.000681
+sample,own window,3,e5,1500,0.931064,0.032258,31,0.000681
+sample,own window,3,e5_free,1500,0.931069,0.032258,31,0.000681
+always_on,own window,3,pred,150,0.964958,0.0,2,0.0
+always_on,own window,3,e5,150,0.957959,0.0,2,0.0
+always_on,own window,3,e6,150,0.951186,0.0,2,0.0
+always_on,own window,3,e6_free,150,0.678571,0.0,2,0.0
+sample,own window,4,pred,1500,0.905861,0.073171,41,0.000685
+sample,own window,4,e5,1500,0.905384,0.073171,41,0.000685
+sample,own window,4,e5_free,1500,0.901177,0.073171,41,0.000685
+always_on,own window,4,pred,150,0.847721,0.0,1,0.006711
+always_on,own window,4,e5,150,0.847721,0.0,1,0.006711
+always_on,own window,4,e6,150,0.845194,0.0,1,0.006711
+always_on,own window,4,e6_free,150,0.642112,0.0,1,0.006711
+sample,own window,5,pred,1500,0.854182,0.157895,38,0.001368
+sample,own window,5,e5,1500,0.853242,0.157895,38,0.001368
+sample,own window,5,e5_free,1500,0.8503,0.157895,38,0.001368
+always_on,own window,5,pred,150,0.929502,0.0,2,0.0
+always_on,own window,5,e5,150,0.926596,0.0,2,0.0
+always_on,own window,5,e6,150,0.926596,0.0,2,0.0
+always_on,own window,5,e6_free,150,0.69162,0.0,2,0.0

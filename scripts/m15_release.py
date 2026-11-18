@@ -3,7 +3,7 @@
   experiment_config.json   the resolved headline config (Kaggle environment, seed 42, 4 threads)
   model_hparams.json       the config sections that set models and training
   client_partitions.json, window_definition.json   M2's full pool, headline timeline
-  llm_logs/*.jsonl.gz      every LLM prompt and reply: M11 seeds 42-44 (Gemma 2 2B), the Mistral subset, M12
+  llm_logs/*.jsonl.gz      every LLM prompt and reply: M11 seeds 42-44 (Gemma 2 2B), the Mistral subset, M12, Notebook B's rerun
   dataset/SHA256SUMS       SHA-256 of the four processed Parquet files (what the public Kaggle dataset must hold)
   MANIFEST.json            SHA-256 and size of every file above, and the commit they came from
 
@@ -32,6 +32,7 @@ LOGS = {  # released name -> source under reports/
     "m12_gemma2-2b_seed42.jsonl": "m12/full/llm_log_llm.jsonl",
     "m12_gemma2-2b_seed43.jsonl": "m12/full/seed43/llm_log_llm.jsonl",
     "m12_gemma2-2b_seed44.jsonl": "m12/full/seed44/llm_log_llm.jsonl",
+    "m15_notebook_b_gemma2-2b_seed42.jsonl": "m15/full/notebook_b/m11/llm_log.jsonl",   # 100 rows per client and window
 }
 
 
