@@ -1,0 +1,18 @@
+{
+  "t0": {
+    "single_ms_p50": 6.007821000366675,
+    "single_ms_p95": 8.923819500023455,
+    "batch_rows": 10000,
+    "batch_us_per_row": 6.0141380999994,
+    "xgb_bytes": 211844,
+    "lgb_bytes": 619043
+  },
+  "t5": {
+    "single_ms_p50": 6.042310500106396,
+    "single_ms_p95": 9.764278499869762,
+    "batch_rows": 10000,
+    "batch_us_per_row": 139.20585770001708,
+    "xgb_bytes": 27352344,
+    "lgb_bytes": 9165332
+  }
+}
