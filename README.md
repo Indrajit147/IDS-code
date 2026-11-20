@@ -1,4 +1,4 @@
-# Drift-Adaptive Federated Intrusion Detection for IoMT with LLM Assistance
+# LLM-Assisted Drift-Adaptive Incremental Federated Intrusion Detection in IoT: Edge Ensemble Learning with Cloud Verification and Explainability
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Python](https://img.shields.io/badge/python-%E2%89%A53.10-blue.svg)
